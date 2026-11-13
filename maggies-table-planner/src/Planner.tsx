@@ -1,8 +1,8 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Guest} from './types';
+import {Guest,seed} from './seed';
 import {createRoot} from 'react-dom/client';
-const seed:Guest[]=[];
+
 const caps=[0,7,7,6,7,6,6,6,6];
 const colors=['orange','yellow','pink','blue','green','peach','grey'];
 function Planner(){

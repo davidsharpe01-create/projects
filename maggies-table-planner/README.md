@@ -1,6 +1,6 @@
 # Maggie’s table planner
 
-Cloudflare Pages app with shared allocation storage in D1. No guest names are included in this public repository.
+Cloudflare Pages app with shared allocation storage in D1. Includes the 51-guest starting plan, published with the organiser’s permission.
 
 ## Deploy through Cloudflare
 
@@ -9,7 +9,7 @@ Cloudflare Pages app with shared allocation storage in D1. No guest names are in
 3. Create a D1 database named `maggies-table-planner`. In its Console, run the SQL in `schema.sql`.
 4. In the Pages project Settings → Bindings, add a D1 binding named `DB`, selecting that database.
 5. Redeploy the production deployment after adding the binding.
-6. Open the deployed URL and choose **Import plan**. Select your downloaded `Maggies_Table_Planner.html`. This imports the guest list into your database, without committing it to GitHub.
+6. Open the deployed URL. The original 51-guest plan is saved to D1 on first use. Import plan can replace it with an updated offline copy.
 
 Visitors can view and edit without sign-in. Anyone with the website address can access the shared plan. `noindex` discourages search indexing; it is not access control.
 
