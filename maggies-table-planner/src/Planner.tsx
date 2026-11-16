@@ -2,7 +2,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {Guest,seed} from './seed';
 import {createRoot} from 'react-dom/client';
-
 const caps=[0,7,7,6,7,6,6,6,6];
 const colors=['orange','yellow','pink','blue','green','peach','grey'];
 function Planner(){
@@ -20,7 +19,6 @@ function Planner(){
  function pointerUp(e:React.PointerEvent<HTMLElement>){const g=gesture.current;gesture.current=null;setSliding(null);setOver(null);if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);if(!g?.moved)return;suppressClick.current=true;setTimeout(()=>{suppressClick.current=false},0);const target=document.elementFromPoint(e.clientX,e.clientY);const table=target?.closest<HTMLElement>('[data-table]');if(!table)return;const t=Number(table.dataset.table);const row=target?.closest<HTMLElement>('[data-guest]');let before=row?.dataset.guest;if(row&&before){const rect=row.getBoundingClientRect();if(e.clientY>rect.top+rect.height/2){const rows=current.current.filter(p=>p.table===t&&p.id!==g.id);const i=rows.findIndex(p=>p.id===before);before=rows[i+1]?.id}}move(g.id,t,before)}
  function pointerCancel(){gesture.current=null;setSliding(null);setOver(null)}
  function exportCSV(){const lines=[['Table','Name','Organisation','Colour'],...guests.map(g=>[g.table?String(g.table):'Unassigned',g.name,g.org,g.color])];const blob=new Blob(['\uFEFF'+lines.map(r=>r.map(s=>'"'+s.replaceAll('"','""')+'"').join(',')).join('\r\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='maggies-table-plan.csv';a.click();URL.revokeObjectURL(a.href)}
- function importFile(file:File){const reader=new FileReader();reader.onload=()=>{try{const doc=new DOMParser().parseFromString(String(reader.result),'text/html');const raw=doc.getElementById('plan-data');const data=raw?JSON.parse(raw.textContent||''):JSON.parse(String(reader.result));if(!Array.isArray(data)||data.some(g=>typeof g.name!=='string'||typeof g.org!=='string'||!Number.isInteger(g.table)))throw Error('Invalid plan');if(confirm('Replace the current plan with '+data.length+' imported guests?'))save(data)}catch{setStatus('Could not import. Select the downloaded planner HTML or a plan JSON file.')}};reader.readAsText(file)}
  const visible=(g:Guest)=>(g.name+' '+g.org).toLowerCase().includes(query.toLowerCase());
  return <main>
  <div className="minimaltools"><button disabled={!history.length||busy} onClick={()=>{const p=history[history.length-1];setHistory(h=>h.slice(0,-1));save(p,false)}}>Undo</button><button disabled={!ready||busy} onClick={()=>setEdit({id:crypto.randomUUID(),name:'',org:'',color:'grey',table:0})}>Add name</button><button onClick={()=>print()}>Print</button><span role="status">{status==='All changes saved'?'Saved':status}</span></div>
