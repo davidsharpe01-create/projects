@@ -1,12 +1,12 @@
 import earcut from 'earcut'
 import type {SnapGuide} from './snap'
-import type {ContextBuilding} from './context'
+import {roadWidths,type ContextData} from './context'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
 import { footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
-export type Layers = {context:boolean; grid:boolean; labels:boolean}
-export const initialLayers:Layers={context:true,grid:false,labels:true}
+export type Layers = {context:boolean; streets:boolean; grid:boolean; labels:boolean}
+export const initialLayers:Layers={context:true,streets:true,grid:false,labels:true}
 export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const angle=plan?0:c.angle
   const s=Math.min(w/185,h/(plan?133:108))*c.zoom
@@ -20,7 +20,7 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
   return {project,invert,s,depth}
 }
-type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; context:ContextBuilding[]}
+type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; context:ContextData}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
@@ -45,6 +45,14 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       world([[i,-300],[i,300]],undefined,'#64776d44',.8,false)
       world([[-300,i],[300,i]],undefined,'#64776d44',.8,false)
     }
+  }
+  if(layers.streets){
+    const roads=scene.context.roads.map(({line,kind})=>({
+      points:line.map(p=>xy(p)),
+      width:Math.max(1.2,Math.min(22,roadWidths[kind]*s*(plan?.36:.26)))
+    }))
+    for(const {points,width} of roads)path(points,undefined,'#d0c9bc',width+1.4,false)
+    for(const {points,width} of roads)path(points,undefined,'#faf8f2',width,false)
   }
   const boundary=project.boundary
   world(boundary,project.anchor?'#ead7be72':'#e9dbc7','#ad574e',2.1)
@@ -94,7 +102,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     }
   }
   const contextMaterial={roof:'#dedbd3',walls:['#cdc8be','#bdb8ae','#c8c3b9','#d4cfc5'],line:'#9e988d',floor:'#dedbd3'}
-  if(layers.context)for(const building of scene.context){
+  if(layers.context)for(const building of scene.context.buildings){
     const [outline,...holes]=building.rings
     if(plan||building.height===0){
       for(const ring of building.rings)world(ring,undefined,contextMaterial.line,.9)
@@ -177,6 +185,44 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     surface.paint()
     ctx.restore()
   })
+  if(layers.streets){
+    const used=new Set<string>()
+    const boxes:{x:number;y:number;half:number}[]=[]
+    const streetNames=[...scene.context.streetNames].sort((a,b)=>roadWidths[b.kind]-roadWidths[a.kind])
+    ctx.font='500 11px system-ui'
+    ctx.textAlign='center'
+    ctx.textBaseline='middle'
+    for(const street of streetNames){
+      if(used.has(street.name))continue
+      const points=street.line.map(p=>xy(p))
+      const widths=points.slice(1).map((p,i)=>length(p,points[i]))
+      const total=widths.reduce((a,b)=>a+b,0)
+      const half=ctx.measureText(street.name).width/2+4
+      if(total<half*2+4)continue
+      const candidates=widths.map((width,i)=>({width,a:points[i],b:points[i+1]}))
+        .sort((a,b)=>b.width-a.width)
+      let placed=false
+      for(const {a,b,width} of candidates){
+        if(width<10)break
+        for(const t of [.5,.25,.75]){
+          const x=a[0]+(b[0]-a[0])*t,y=a[1]+(b[1]-a[1])*t
+          if(x-half<10||x+half>w-43||y<23||y>h-26)continue
+          if(boxes.some(box=>Math.abs(x-box.x)<half+box.half+7&&Math.abs(y-box.y)<20))continue
+          if([x,x-half,x+half].some(px=>visibleSurface(surfaces,[px,y])))continue
+          ctx.lineWidth=3
+          ctx.strokeStyle='#faf8f2'
+          ctx.strokeText(street.name,x,y)
+          ctx.fillStyle='#554e43'
+          ctx.fillText(street.name,x,y)
+          boxes.push({x,y,half})
+          used.add(street.name)
+          placed=true
+          break
+        }
+        if(placed)break
+      }
+    }
+  }
   labels.forEach(({p:[x,y],name,selected:chosen})=>{
     ctx.font='600 11px system-ui'
     const width=ctx.measureText(name).width+21
