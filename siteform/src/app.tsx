@@ -1,16 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
-import { sample, apartmentStoreys, length, footprintSatisfies, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
+import { sample, apartmentStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
 import './style.css'
 
 type Tool='select'|'boundary'|'house'|'apartment'|'move'|'rotate'|'measure'|'vertices'
-const tools:{id:Tool;icon:string;name:string;key:string}[]=[
-  {id:'select',icon:'mouse',name:'Select',key:'V'},{id:'boundary',icon:'boundary',name:'Boundary',key:'B'},
-  {id:'house',icon:'house',name:'House run',key:'H'},{id:'apartment',icon:'building',name:'Apartment',key:'A'},
-  {id:'move',icon:'move',name:'Move',key:'M'},{id:'rotate',icon:'rotate',name:'Rotate',key:'R'},
-  {id:'measure',icon:'ruler',name:'Measure',key:'L'}
+const tools:{id:Tool;icon:string;name:string}[]=[
+  {id:'select',icon:'mouse',name:'Select'},{id:'boundary',icon:'boundary',name:'Boundary'},
+  {id:'house',icon:'house',name:'House run'},{id:'apartment',icon:'building',name:'Apartment'},
+  {id:'move',icon:'move',name:'Move'},{id:'rotate',icon:'rotate',name:'Rotate'},
+  {id:'measure',icon:'ruler',name:'Measure'}
 ]
 const key='siteform.project.v1'
 function load():Project {
@@ -23,13 +23,13 @@ function load():Project {
 const format=(n:number,places=0)=>n.toLocaleString('en-GB',{maximumFractionDigits:places,minimumFractionDigits:places})
 const pointDiff=(p:Point,q:Point):Point=>[p[0]-q[0],p[1]-q[1]]
 const defaultOption='Base option'
-type Drag={screen:Point;point:Point;camera:Camera;project:Project;id:string|null;action:'orbit'|'pan'|'move'|'rotate'|'vertices'|'height'|'draw';vertex:number;changed:boolean}
+type Drag={screen:Point;point:Point;camera:Camera;project:Project;id:string|null;action:'orbit'|'pan'|'move'|'rotate'|'vertices'|'height'|'draw';vertex:number;changed:boolean;last:Point;navigation:boolean}
 
 function NumberField({label,value,update,min,max,step=1,unit='m'}:{label:string;value:number;update:(n:number)=>void;min:number;max:number;step?:number;unit?:string}){
   const [draft,change]=useState(String(value))
   useEffect(()=>change(String(value)),[value])
   return <label className="field"><span>{label}</span><div><input type="number" value={draft} min={min} max={max} step={step}
-    onChange={e=>change(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}}
+    onChange={e=>change(e.target.value)}
     onBlur={()=>{const n=Number(draft);if(draft.trim()&&Number.isFinite(n)){const v=Math.min(max,Math.max(min,step===1?Math.round(n):n));change(String(v));update(v)}else change(String(value))}}/>{unit&&<small>{unit}</small>}</div></label>
 }
 function Button({icon,children,onClick,disabled=false,active=false,kind='',title}:{icon:string;children?:ReactNode;onClick:()=>void;disabled?:boolean;active?:boolean;kind?:string;title?:string}){
@@ -65,7 +65,6 @@ function App(){
   const canvas=useRef<HTMLCanvasElement>(null)
   const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,handles:[],heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
-  const clipboard=useRef<Block|null>(null)
   const totals=development(project)
   const warnings=project.blocks.flatMap(b=>blockStats(b,project).outside?[b.name+' extends beyond the site boundary.']:[])
   if(totals.gia===null)warnings.push('GIA is unavailable where an internal footprint cannot be calculated.')
@@ -120,31 +119,6 @@ function App(){
     commit({...project,blocks:project.blocks.filter(b=>b.id!==selected.id)})
     setSelection(null)
   }
-  useEffect(()=>{
-    const listener=(e:KeyboardEvent)=>{
-      const target=e.target as HTMLElement
-      if(e.isComposing||target.isContentEditable||['INPUT','SELECT','TEXTAREA'].includes(target.tagName))return
-      if(e.ctrlKey||e.metaKey){
-        if(e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo()}
-        if(e.key.toLowerCase()==='y'){e.preventDefault();redo()}
-        if(e.key.toLowerCase()==='c'&&selected){clipboard.current=selected;setNotice(selected.name+' copied.')}
-        if(e.key.toLowerCase()==='v'&&clipboard.current){e.preventDefault();duplicate(clipboard.current)}
-        return
-      }
-      if(e.key==='Delete'&&selected&&!e.altKey&&!e.shiftKey&&!drag.current){
-        e.preventDefault()
-        remove()
-        return
-      }
-      if(e.key==='Escape'){choose('select');setSelection(null)}
-      if(e.key==='Enter'&&target.tagName!=='BUTTON')finish()
-      if(e.key.toLowerCase()==='e')choose(selected?'select':'vertices')
-      const match=tools.find(t=>t.key.toLowerCase()===e.key.toLowerCase())
-      if(match)choose(match.id)
-    }
-    window.addEventListener('keydown',listener)
-    return()=>window.removeEventListener('keydown',listener)
-  })
   function viewPoint(event:PointerEvent):Point{
     const rect=canvas.current!.getBoundingClientRect()
     return [event.clientX-rect.left,event.clientY-rect.top]
@@ -157,12 +131,13 @@ function App(){
     return snap?p.map(n=>Math.round(n*2)/2) as Point:p
   }
   function start(e:PointerEvent<HTMLCanvasElement>){
-    if(e.button>2)return
+    if(e.button!==0&&e.button!==1)return
+    if(e.button===1)e.preventDefault()
     setMenu(null)
     const screen=viewPoint(e),point=worldPoint(screen)
     const clicked=scene.current.pick(screen)
     let action:Drag['action']='draw',id=selection,vertex=-1
-    if(e.button!==0||e.shiftKey){action=e.button===2&&!e.shiftKey&&!plan?'orbit':'pan'}
+    if(e.button===1){action=plan?'pan':'orbit'}
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
     else if(tool==='select'||tool==='vertices'){
       let distance=12
@@ -173,12 +148,27 @@ function App(){
       action=vertex>=0?'vertices':scene.current.heightAt(screen)?'height':'pan'
       if(tool==='vertices')id=null
     }
-    drag.current={screen,point,camera,project,id,action,vertex,changed:false}
+    drag.current={screen,point,camera,project,id,action,vertex,changed:false,last:screen,navigation:e.button===1}
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   function move(e:PointerEvent<HTMLCanvasElement>){
     const screen=viewPoint(e),d=drag.current
     if(draft.length)setPointer(worldPoint(screen))
+    if(d&&(e.buttons&4)){
+      d.navigation=true
+      const navigation=plan||(e.buttons&1)?'pan':'orbit'
+      if(d.action!==navigation){
+        d.screen=d.last
+        d.camera=camera
+        d.action=navigation
+        d.changed=true
+        setPreview(null)
+      }
+    }else if(d&&(d.action==='orbit'||d.action==='pan')&&d.navigation){
+      d.last=screen
+      return
+    }
+    if(d)d.last=screen
     e.currentTarget.style.cursor=(d?d.action==='height':scene.current.heightAt(screen))?'ns-resize':''
     if(!d||length(screen,d.screen)<3&&!d.changed)return
     d.changed=true
@@ -193,7 +183,13 @@ function App(){
       })})
       return
     }
-    if(d.action==='orbit')setCamera({...d.camera,angle:d.camera.angle+offset[0]*.008,tilt:Math.min(.94,Math.max(.24,d.camera.tilt+offset[1]*.005))})
+    if(d.action==='orbit'){
+      const pivot:Point=[canvas.current!.clientWidth/2,canvas.current!.clientHeight/2]
+      const anchor=geometry(d.camera).invert(pivot)
+      const next={...d.camera,angle:d.camera.angle+offset[0]*.008,tilt:Math.min(.94,Math.max(.24,d.camera.tilt+offset[1]*.005))}
+      const [dx,dy]=pointDiff(pivot,geometry(next).project(anchor))
+      setCamera({...next,pan:[next.pan[0]+dx,next.pan[1]+dy]})
+    }
     if(d.action==='pan')setCamera({...d.camera,pan:[d.camera.pan[0]+offset[0],d.camera.pan[1]+offset[1]]})
     let point=worldPoint(screen,d.camera)
     if(d.action==='vertices'){
@@ -210,7 +206,7 @@ function App(){
         if(b.id!==d.id)return b
         const [x,y]=b.line[0],angle=offset[0]*.012
         const line=b.line.map(([px,py],i):Point=>{
-          if(d.action==='vertices'||d.action==='height')return i===d.vertex?point:[px,py]
+          if(d.action==='vertices')return i===d.vertex?point:[px,py]
           if(d.action==='move')return [px+delta[0],py+delta[1]]
           return [x+(px-x)*Math.cos(angle)-(py-y)*Math.sin(angle),y+(px-x)*Math.sin(angle)+(py-y)*Math.cos(angle)]
         })
@@ -229,7 +225,7 @@ function App(){
       }
       return
     }
-    if(e.button!==0||e.shiftKey)return
+    if(e.button!==0||d.navigation)return
     if(d.action==='vertices'||d.action==='height')return
     if(tool==='vertices'){choose('select');setSelection(null);return}
     if(tool==='select'){setSelection(scene.current.pick(d.screen));return}
@@ -240,12 +236,39 @@ function App(){
       setPointer(null)
     }
   }
-  function zoom(delta:number){
-    setCamera(c=>({...c,zoom:Math.min(4,Math.max(.38,c.zoom*delta))}))
+  function zoom(delta:number,anchor?:Point){
+    setCamera(c=>{
+      const zoom=Math.min(4,Math.max(Math.min(.38,c.zoom),c.zoom*delta))
+      if(!anchor)return {...c,zoom}
+      const ratio=zoom/c.zoom
+      const origin=projection(canvas.current!.clientWidth,canvas.current!.clientHeight,c,false).project([0,0])
+      return {...c,zoom,pan:[c.pan[0]+(anchor[0]-origin[0])*(1-ratio),c.pan[1]+(anchor[1]-origin[1])*(1-ratio)]}
+    })
+  }
+  function fitModel(){
+    const node=canvas.current!
+    const {clientWidth:w,clientHeight:h}=node
+    const base:Camera={...camera,zoom:1,pan:[0,0]}
+    const model=projection(w,h,base,plan)
+    const points=project.boundary.map(p=>model.project(p))
+    project.blocks.forEach(b=>footprints(b,project.targets).forEach(poly=>poly.forEach(p=>{
+      points.push(model.project(p,plan?0:b.level),model.project(p,plan?0:b.level+height(b)))
+    })))
+    if(!points.length){setCamera(home);return}
+    const xs=points.map(p=>p[0]),ys=points.map(p=>p[1])
+    const l=Math.min(...xs),r=Math.max(...xs),t=Math.min(...ys),b=Math.max(...ys)
+    const zoom=Math.min(4,(w*.81)/Math.max(1,r-l),(h*.76)/Math.max(1,b-t))
+    const [x,y]=model.project([0,0])
+    setCamera({...base,zoom,pan:[w/2-x-((l+r)/2-x)*zoom,h/2-y-((t+b)/2-y)*zoom]})
   }
   useEffect(()=>{
     const node=canvas.current
-    const wheel=(e:WheelEvent)=>{e.preventDefault();zoom(e.deltaY<0?1.12:1/1.12)}
+    const wheel=(e:WheelEvent)=>{
+      e.preventDefault()
+      if(!e.deltaY)return
+      const rect=node!.getBoundingClientRect()
+      zoom(e.deltaY<0?1.12:1/1.12,[e.clientX-rect.left,e.clientY-rect.top])
+    }
     node?.addEventListener('wheel',wheel,{passive:false})
     return()=>node?.removeEventListener('wheel',wheel)
   },[])
@@ -282,7 +305,7 @@ function App(){
     </header>
     <section className="toolbar" aria-label="Design tools">
       <div className="toolset">
-        {tools.map((t,i)=><div key={t.id} className={i===4?'tool-divider':''}><Button icon={t.icon} kind="tool" title={t.name+' ('+t.key+')'} active={tool===t.id} onClick={()=>choose(t.id)}>{t.name}</Button></div>)}
+        {tools.map((t,i)=><div key={t.id} className={i===4?'tool-divider':''}><Button icon={t.icon} kind="tool" title={t.name} active={tool===t.id} onClick={()=>choose(t.id)}>{t.name}</Button></div>)}
         <div className="tool-divider history"><Button icon="undo" kind="square" title="Undo" disabled={!history.past.length} onClick={undo}/><Button icon="redo" kind="square" title="Redo" disabled={!history.future.length} onClick={redo}/></div>
       </div>
       <div className="view-actions">
@@ -301,7 +324,7 @@ function App(){
       <section className="workspace" aria-label="Site workspace">
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
           onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={()=>{drag.current=null;setPreview(null)}}
-          onContextMenu={e=>e.preventDefault()}/>
+          onAuxClick={e=>{if(e.button===1)e.preventDefault()}}/>
         <div className="site-location">
           <button className="site-title" type="button" aria-expanded={menu==='location'} onClick={()=>setOption('location')}>
             <span className="map-pin"><Icon name="location" size={16}/></span>
@@ -324,7 +347,7 @@ function App(){
           <div className="map-controls">
             <Button icon="plus" title="Zoom in" onClick={()=>zoom(1.22)}/>
             <Button icon="minus" title="Zoom out" onClick={()=>zoom(1/1.22)}/>
-            <Button icon="target" title="Reset camera" onClick={()=>setCamera(home)}/>
+            <Button icon="target" title="Fit model" onClick={fitModel}/>
           </div>
         </div>
         {plan&&<label className="floor-picker">Floor <select value={shownFloor} onChange={e=>setFloor(Number(e.target.value))}>
@@ -332,6 +355,7 @@ function App(){
         {actions[tool]&&<div className="draw-message">
           <span>{tool==='measure'&&draft.length===2?format(length(...draft as [Point,Point]),2)+' m':actions[tool]}</span>
           {drawTool&&<button className="primary" onClick={finish}>Finish</button>}
+          {tool==='boundary'&&!draft.length&&project.boundary.length>0&&<button className="primary" onClick={()=>{setSelection(null);choose('vertices')}}>Edit boundary</button>}
           <Button icon="close" kind="square" title="Exit tool" onClick={()=>choose('select')}/>
         </div>}
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
@@ -412,7 +436,7 @@ function App(){
       <div><span className="status-dot"/><strong>{plan?'Plan view':'3D view'}</strong><span className="foot-divider"/><span>Local coordinates · metres</span></div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>setSnap(e.target.checked)}/>Snap to 0.5 m</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Click a building and drag its frontage handles in either view. Drag a selected apartment roof up or down to change its storeys. Click empty space to finish. Left-drag elsewhere to pan, right-drag to orbit in 3D, and scroll to zoom.</p><p>Use the Boundary tool to redraw the redline. Clear the selection and press <kbd>E</kbd> to edit its vertices.</p><p>Press Enter to finish drawing or Esc to leave a tool. Press Delete to remove the selected block. Use Ctrl/Cmd+Z to undo.</p><a href="https://www.openstreetmap.org/#map=15/52.48/-1.90" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold both the middle and left buttons to pan while using another tool. In Plan, middle-drag also pans. Scroll to zoom around the cursor.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=15/52.48/-1.90" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
