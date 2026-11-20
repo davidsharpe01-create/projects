@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type R
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { sample, length, footprintSatisfies, frontage, floors, height, inside, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
-import { draw, home, initialLayers, projection, type Camera, type Hit } from './scene'
+import { draw, home, initialLayers, projection, type Camera } from './scene'
 import './style.css'
 
 type Tool='select'|'boundary'|'house'|'apartment'|'move'|'rotate'|'measure'|'vertices'
@@ -63,11 +63,12 @@ function App(){
   const [snap,setSnap]=useState(true)
   const [size,setSize]=useState(0)
   const canvas=useRef<HTMLCanvasElement>(null)
-  const hits=useRef<Hit[]>([])
+  const scene=useRef<ReturnType<typeof draw>>({hits:[],handles:[]})
   const drag=useRef<Drag|null>(null)
   const clipboard=useRef<Block|null>(null)
   const totals=development(project)
   const warnings=project.blocks.flatMap(b=>blockStats(b,project).outside?[b.name+' extends beyond the site boundary.']:[])
+  if(totals.gia===null)warnings.push('GIA is unavailable where an internal footprint cannot be calculated.')
   if(project.boundary.length<3)warnings.unshift('Draw a site boundary to check containment.')
   const storyCount=Math.max(1,...project.blocks.map(floors))
   useEffect(()=>{try{localStorage.setItem(key,JSON.stringify(project));setSaved(true)}catch{setSaved(false)}},[project])
@@ -79,7 +80,7 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)hits.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),project:preview??project,selected:selection,draft,pointer,layers,opacity,showVertices:tool==='vertices',refresh:()=>setSize(n=>n+1)})
+    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),project:preview??project,selected:selection,draft,pointer,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',refresh:()=>setSize(n=>n+1)})
   },[camera,plan,floor,project,preview,selection,draft,pointer,size,layers,opacity,tool])
   function commit(next:Project){
     setHistory(h=>JSON.stringify(next)===JSON.stringify(h.current)?h:{past:[...h.past.slice(-49),h.current],current:next,future:[]})
@@ -132,7 +133,7 @@ function App(){
       }
       if(e.key==='Escape'){choose('select');setSelection(null)}
       if(e.key==='Enter'&&target.tagName!=='BUTTON')finish()
-      if(e.key.toLowerCase()==='e')choose('vertices')
+      if(e.key.toLowerCase()==='e')choose(selected?'select':'vertices')
       const match=tools.find(t=>t.key.toLowerCase()===e.key.toLowerCase())
       if(match)choose(match.id)
     }
@@ -154,17 +155,19 @@ function App(){
     if(e.button>2)return
     setMenu(null)
     const screen=viewPoint(e),point=worldPoint(screen)
-    const clicked=hits.current.findLast(h=>inside(screen,h.shape))?.id??null
+    const clicked=scene.current.hits.findLast(h=>inside(screen,h.shape))?.id??null
     let action:Drag['action']='draw',id=selection,vertex=-1
     if(e.button!==0||e.shiftKey){action=e.button===2&&!e.shiftKey&&!plan?'orbit':'pan'}
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
-    else if(tool==='vertices'){
-      const handles=selected?.line??project.boundary
-      const {project:toScreen}=geometry()
-      vertex=handles.findIndex(p=>length(screen,toScreen(p))<12)
-      if(vertex>=0)action='vertices'
+    else if(tool==='select'||tool==='vertices'){
+      let distance=12
+      scene.current.handles.forEach((handle,i)=>{
+        const next=length(screen,handle)
+        if(next<distance){distance=next;vertex=i}
+      })
+      action=vertex>=0?'vertices':'pan'
+      if(tool==='vertices')id=null
     }
-    else if(tool==='select'){action='pan'}
     drag.current={screen,point,camera,project,id,action,vertex,changed:false}
     e.currentTarget.setPointerCapture(e.pointerId)
   }
@@ -176,7 +179,14 @@ function App(){
     const offset=pointDiff(screen,d.screen)
     if(d.action==='orbit')setCamera({...d.camera,angle:d.camera.angle+offset[0]*.008,tilt:Math.min(.94,Math.max(.24,d.camera.tilt+offset[1]*.005))})
     if(d.action==='pan')setCamera({...d.camera,pan:[d.camera.pan[0]+offset[0],d.camera.pan[1]+offset[1]]})
-    const point=worldPoint(screen,d.camera)
+    let point=worldPoint(screen,d.camera)
+    if(d.action==='vertices'){
+      const origin=d.id?d.project.blocks.find(b=>b.id===d.id)!.line[d.vertex]:d.project.boundary[d.vertex]
+      const {invert,project:toScreen}=geometry(d.camera)
+      const [x,y]=toScreen(origin)
+      point=invert([x+offset[0],y+offset[1]])
+      if(snap)point=point.map(n=>Math.round(n*2)/2) as Point
+    }
     if(d.action==='vertices'&&d.vertex>=0&&!d.id)setPreview({...d.project,boundary:d.project.boundary.map((p,i)=>i===d.vertex?point:p)})
     if(d.id&&['move','rotate','vertices'].includes(d.action)){
       const delta=pointDiff(point,d.point)
@@ -204,7 +214,9 @@ function App(){
       return
     }
     if(e.button!==0||e.shiftKey)return
-    if(tool==='select'){setSelection(hits.current.findLast(h=>inside(d.screen,h.shape))?.id??null);return}
+    if(d.action==='vertices')return
+    if(tool==='vertices'){choose('select');setSelection(null);return}
+    if(tool==='select'){setSelection(scene.current.hits.findLast(h=>inside(d.screen,h.shape))?.id??null);return}
     if(['boundary','house','apartment','measure'].includes(tool)){
       if(tool==='measure'&&draft.length===2){setDraft([d.point]);return}
       if(draft.length&&length(draft.at(-1)!,d.point)<.05)return
@@ -330,8 +342,9 @@ function App(){
           <div className="summary-grid" aria-live="polite">
             <div><span>Homes</span><strong>{format(totals.houses)}</strong></div>
             <div><span>Dwellings per hectare</span><strong>{totals.site ? format(totals.density,1) : '—'} <small>dph</small></strong></div>
+            <div><span title="Indicative gross internal area">GIA</span><strong>{totals.gia===null?'—':format(totals.gia)} <small>m²</small></strong></div>
           </div>
-          <p className="summary-note">House runs count towards these totals. Apartment layouts are pending.</p>
+          <p className="summary-note">Homes and density count house runs. GIA includes all blocks.</p>
         </div>
         <div className="block-list">
           <div className="section-label">BUILDINGS <span>{project.blocks.length}</span></div>
@@ -358,7 +371,7 @@ function App(){
               <div className="readout"><span>Frontage length</span><strong>{format(frontage(selected.line),1)} m</strong></div>
             </div>
             <div className="property-actions">
-              <Button icon="boundary" kind="edit-vertices" onClick={()=>choose(tool==='vertices'?'select':'vertices')} active={tool==='vertices'}>Edit vertices</Button>
+              {tool==='select'&&<span className="vertex-hint">Drag frontage handles to edit</span>}
               <Button icon="copy" kind="square" title="Duplicate block" onClick={()=>duplicate(selected)}/>
               <Button icon="trash" kind="square" title="Delete block" onClick={remove}/>
             </div>
@@ -372,7 +385,7 @@ function App(){
             <div><dt>Site coverage</dt><dd>{format(totals.coverage,1)}%</dd></div>
             <div><dt>Usable house area</dt><dd>{format(totals.usable)} m²</dd></div>
           </dl>
-          <p className="method">External area uses the outside footprint. Usable house area uses internal wall faces.</p>
+          <p className="method">Indicative GIA measures inside external walls and includes internal partitions. External floor area uses the outside footprint.</p>
         </Panel>
         <Panel title="Warnings" icon="warning" count={warnings.length}>
           <div className="warnings">{warnings.length?warnings.map(w=><p key={w}><Icon name="warning" size={14}/>{w}</p>):<p><Icon name="check" size={14}/>All blocks within the site boundary.</p>}</div>
@@ -383,7 +396,7 @@ function App(){
       <div><span className="status-dot"/><strong>{plan?'Plan view':'3D view'}</strong><span className="foot-divider"/><span>Local coordinates · metres</span></div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>setSnap(e.target.checked)}/>Snap to 0.5 m</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>In Select mode, left-drag to pan and click to select. Right-drag to orbit in 3D. Shift-drag to pan while editing. Scroll to zoom.</p><p>Use the Boundary tool to redraw the redline. Clear the selection and press <kbd>E</kbd> to edit its vertices.</p><p>Press Enter to finish drawing or Esc to leave a tool. Use Ctrl/Cmd+Z to undo.</p><a href="https://www.openstreetmap.org/#map=15/52.48/-1.90" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Click a building and drag its frontage handles in either view. Click empty space to finish. Left-drag elsewhere to pan, right-drag to orbit in 3D, and scroll to zoom.</p><p>Use the Boundary tool to redraw the redline. Clear the selection and press <kbd>E</kbd> to edit its vertices.</p><p>Press Enter to finish drawing or Esc to leave a tool. Use Ctrl/Cmd+Z to undo.</p><a href="https://www.openstreetmap.org/#map=15/52.48/-1.90" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>

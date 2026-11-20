@@ -13,7 +13,8 @@ export const sample:Project = {
   targets:{'3B5P':99,'3B6P':108}, colours:{'3B5P':'#d8b284','3B6P':'#cf937f'}
 }
 export const length = (a:Point,b:Point) => Math.hypot(b[0]-a[0],b[1]-a[1])
-export const area = (p:Point[]) => Math.abs(p.reduce((sum,a,i)=>{const b=p[(i+1)%p.length];return sum+a[0]*b[1]-a[1]*b[0]},0))/2
+const signedArea = (p:Point[]) => p.reduce((sum,a,i)=>{const b=p[(i+1)%p.length];return sum+a[0]*b[1]-a[1]*b[0]},0)/2
+export const area = (p:Point[]) => Math.abs(signedArea(p))
 export const frontage = (p:Point[]) => p.slice(1).reduce((sum,b,i)=>sum+length(p[i],b),0)
 export const depthFor = (target:number,left=defaults.party/2,right=defaults.party/2) =>
   target / defaults.houseFloors / (defaults.frontage-left-right) + 2*defaults.external
@@ -52,16 +53,29 @@ function rectangle(a:Point,b:Point,depth:number):Point[] {
   const p=offset(a,b,depth)
   return [a,b,[b[0]+p[0]-a[0],b[1]+p[1]-a[1]],p]
 }
+function houseUnits(line:Point[],target:number) {
+  return line.slice(1).flatMap((end,i)=>{
+    const start=line[i],count=Math.floor((length(start,end)+1e-7)/defaults.frontage)
+    let previousDepth=0
+    return Array.from({length:count},(_,j)=>{
+      const left=j===0?defaults.external:defaults.party/2
+      const right=j===count-1?defaults.external:defaults.party/2
+      const depth=depthFor(target,left,right)
+      const internalWidth=defaults.frontage-(j===0?left:0)-(j===count-1?right:0)
+      // A step between neighbouring rear walls exposes part of the deeper flank.
+      const exposedFlank=j?Math.abs(depth-previousDepth)*defaults.external:0
+      previousDepth=depth
+      return {
+        outline:rectangle(pointAlong(start,end,j*defaults.frontage),pointAlong(start,end,(j+1)*defaults.frontage),depth),
+        internalArea:internalWidth*(depth-2*defaults.external)-exposedFlank
+      }
+    })
+  })
+}
 export function footprints(b:Block,targets:Project['targets']):Point[][] {
   const line=b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01)
   if(line.length<2) return []
-  if(b.type==='house') return line.slice(1).flatMap((end,i)=>{
-    const start=line[i], count=Math.floor((length(start,end)+1e-7)/defaults.frontage)
-    return Array.from({length:count},(_,j)=>rectangle(
-      pointAlong(start,end,j*defaults.frontage),pointAlong(start,end,(j+1)*defaults.frontage),
-      depthFor(targets[b.houseType],j===0?defaults.external:defaults.party/2,j===count-1?defaults.external:defaults.party/2)
-    ))
-  })
+  if(b.type==='house') return houseUnits(line,targets[b.houseType]).map(unit=>unit.outline)
   const back=line.map((p,i):Point=>{
     if(i===0) return offset(p,line[1],b.depth)
     if(i===line.length-1) return offset(p,line[i-1],-b.depth)
@@ -75,21 +89,39 @@ export function footprints(b:Block,targets:Project['targets']):Point[][] {
   })
   return [[...line,...back.reverse()]]
 }
+function apartmentInternalArea(poly:Point[]) {
+  const winding=Math.sign(signedArea(poly))
+  const thickness=winding*defaults.external
+  const inner=poly.map((p,i):Point=>{
+    const prev=poly[(i+poly.length-1)%poly.length],next=poly[(i+1)%poly.length]
+    const a=offset(p,prev,-thickness),b=offset(p,next,thickness)
+    const u=minus(p,prev),v=minus(next,p)
+    const det=cross(u,v)
+    if(Math.abs(det)<1e-7)return b
+    const t=cross(minus(b,a),v)/det
+    return [a[0]+u[0]*t,a[1]+u[1]*t]
+  })
+  return validPolygon(inner)&&Math.sign(signedArea(inner))===winding&&inner.every((p,i)=>
+    inside(p,poly)&&minus(inner[(i+1)%inner.length],p).reduce((sum,n,j)=>sum+n*(poly[(i+1)%poly.length][j]-poly[i][j]),0)>0
+  )?area(inner):null
+}
 export function blockStats(b:Block,p:Project) {
-  const outlines=footprints(b,p.targets)
+  const units=b.type==='house'?houseUnits(b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01),p.targets[b.houseType]):null
+  const outlines=units?units.map(unit=>unit.outline):footprints(b,p.targets)
+  const internal=units?units.reduce((sum,unit)=>sum+unit.internalArea,0):outlines.length?apartmentInternalArea(outlines[0]):null
   const footprint=outlines.reduce((sum,poly)=>sum+area(poly),0)
   const outside=p.boundary.length>=3 && outlines.some(poly=>poly.some((a,i)=>
     !inside(a,p.boundary) || p.boundary.some((c,j)=>intersects(a,poly[(i+1)%poly.length],c,p.boundary[(j+1)%p.boundary.length]))
   ))
   const houses=b.type==='house'?outlines.length:0
-  return {footprint, gross:footprint*floors(b), houses, usable:houses*p.targets[b.houseType], outside}
+  return {footprint, gross:footprint*floors(b), gia:internal===null?null:internal*floors(b), houses, usable:houses*p.targets[b.houseType], outside}
 }
 export function development(p:Project) {
   const site=area(p.boundary)
   const totals=p.blocks.reduce((total,b)=>{
     const s=blockStats(b,p)
-    return {gross:total.gross+s.gross,footprint:total.footprint+s.footprint,houses:total.houses+s.houses,usable:total.usable+s.usable}
-  },{gross:0,footprint:0,houses:0,usable:0})
+    return {gross:total.gross+s.gross,gia:total.gia===null||s.gia===null?null:total.gia+s.gia,footprint:total.footprint+s.footprint,houses:total.houses+s.houses,usable:total.usable+s.usable}
+  },{gross:0,gia:0 as number|null,footprint:0,houses:0,usable:0})
   return {...totals,site,density:site?totals.houses*10000/site:0,coverage:site?totals.footprint/site*100:0}
 }
 export function newBlock(project:Project,type:Block['type'],line:Point[]):Block {

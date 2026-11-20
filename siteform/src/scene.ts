@@ -1,5 +1,5 @@
 import { paintMap } from './basemap'
-import { footprints, levels, height, inside, type Point, type Project } from './model'
+import { footprints, levels, height, floors, inside, type Point, type Project } from './model'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
 export type Layers = {context:boolean; trees:boolean; grid:boolean; labels:boolean}
@@ -56,14 +56,14 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   }
   return {project,invert,s}
 }
-type Scene = {camera:Camera;plan:boolean;floor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null; layers:Layers; opacity:number; showVertices:boolean; refresh:()=>void}
+type Scene = {camera:Camera;plan:boolean;floor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; refresh:()=>void}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
   if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){
     canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)
   }
-  const {camera,plan,project,selected,draft,pointer,layers,opacity,showVertices,floor}=scene
+  const {camera,plan,project,selected,draft,pointer,layers,opacity,editFrontage,editBoundary,floor}=scene
   const {project:xy,invert,s}=projection(w,h,camera,plan)
   ctx.setTransform(dpr,0,0,dpr,0,0)
   ctx.fillStyle='#d7dcd0';ctx.fillRect(0,0,w,h)
@@ -161,12 +161,6 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     }
   })
   objects.sort((a,b)=>a.depth-b.depth).forEach(item=>item.draw())
-  const selectedBlock=project.blocks.find(b=>b.id===selected)
-  if(selectedBlock && showVertices){
-    world(selectedBlock.line,undefined,'#176f59',2,false,.1)
-    selectedBlock.line.forEach(p=>dot(xy(p),'#176f59',4.5))
-  }
-  if(showVertices && !selectedBlock) boundary.forEach(p=>dot(xy(p),'#aa5049',4.5))
   labels.forEach(({p:[x,y],name,selected:chosen})=>{
     ctx.font='600 11px system-ui'
     const width=ctx.measureText(name).width+21
@@ -174,6 +168,12 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.fillStyle=chosen?'#206751':'#fdfcf8';ctx.fill()
     ctx.fillStyle=chosen?'#fff':'#35574c';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,x,y+.5)
   })
+  const block=editFrontage?project.blocks.find(b=>b.id===selected && (!plan||floor<floors(b))):undefined
+  const handles=block
+    ?block.line.map(p=>xy(p,plan?0:block.level))
+    :editBoundary?boundary.map(p=>xy(p)):[]
+  if(block)path(handles,undefined,'#176f59',2,false)
+  handles.forEach(p=>dot(p,block?'#176f59':'#aa5049',5.5))
   if(draft.length){
     world(draft,undefined,'#a14a42',2,false)
     if(pointer){ctx.setLineDash([5,5]);world([draft.at(-1)!,pointer],undefined,'#a14a42',1.6,false);ctx.setLineDash([])}
@@ -183,5 +183,5 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.beginPath();ctx.arc(...p,r,0,2*Math.PI);ctx.fillStyle='#fffdf5';ctx.fill()
     ctx.strokeStyle=colour;ctx.lineWidth=2;ctx.stroke()
   }
-  return hits
+  return {hits,handles}
 }

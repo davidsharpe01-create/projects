@@ -21,7 +21,7 @@ a{color:var(--green)}
 .toolset{gap:5px}
 .tool{height:34px;padding:0 10px;border-radius:6px;color:#4d6057;font-size:12px;font-weight:600;white-space:nowrap}
 .tool:hover,.square:hover,.layer-button:hover{background:#f0f3ee}
-.tool.active,.square.active,.layer-button.active,.edit-vertices.active{background:#e5efe8;color:#245f4c}
+.tool.active,.square.active,.layer-button.active{background:#e5efe8;color:#245f4c}
 .tool-divider{border-left:1px solid var(--line);margin-left:6px;padding-left:8px}
 .history{gap:1px}
 .square{height:32px;width:33px;border-radius:6px;color:#586b61;flex-shrink:0}
@@ -70,8 +70,8 @@ h1{margin:0;font-size:25px;font-weight:740;letter-spacing:-.85px;line-height:1.2
 .heading svg{width:16px;height:16px}
 .overview>p{font-size:12px;color:var(--muted);margin:3px 0 15px}
 .overview>.summary-note{font-size:11px;line-height:1.4;margin:8px 0 0}
-.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-.summary-grid>div{display:grid;gap:4px;padding:10px 11px;background:#f2f6f0;border:1px solid #e8eee6;border-radius:7px}
+.summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.summary-grid>div{display:grid;grid-template-rows:1fr auto;gap:4px;padding:9px 7px;background:#f2f6f0;border:1px solid #e8eee6;border-radius:7px}
 .summary-grid span{font-size:11px;color:#64796e}
 .summary-grid strong{font-size:20px;font-weight:710;line-height:1.12;letter-spacing:-.4px}
 .summary-grid strong small{font-weight:560;font-size:11px;color:#677b70;letter-spacing:0}
@@ -102,11 +102,9 @@ h1{margin:0;font-size:25px;font-weight:740;letter-spacing:-.85px;line-height:1.2
 .field input::-webkit-inner-spin-button{appearance:none}
 .field small{font-size:10px;color:#71857a;padding-left:4px}
 .readout strong{background:#f5f7f3;font-weight:600}
-.property-actions{display:flex;gap:6px;margin-top:10px}
-.property-actions .square,.edit-vertices{border:1px solid var(--line);height:29px}
+.property-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:10px}
+.property-actions .square{border:1px solid var(--line);height:29px}
 .property-actions svg{width:14px;height:14px}
-.edit-vertices{padding:0 8px;border-radius:6px;font-size:11px;font-weight:600;margin-right:auto;color:#526d5e}
-.edit-vertices:hover{background:#f0f4ef}
 .statistics{margin:0;padding:0 20px}
 .statistics div{font-size:11px;display:flex;justify-content:space-between;gap:10px;padding:5px 0;color:#62776b;border-bottom:1px solid #edf1eb}
 .statistics dd{color:#314c3d;font-weight:650;margin:0;white-space:nowrap}
@@ -158,3 +156,5 @@ input[type=checkbox],input[type=range]{accent-color:#34745e}
 .location-menu input{width:122px;padding:4px 6px;border:1px solid var(--line);border-radius:4px}
 .location-menu p{line-height:1.5}
 .attribution{position:absolute;right:8px;bottom:1px;background:#fbfcf7e8;padding:1px 4px;border-radius:3px;font-size:9px;text-decoration:none}
+
+.vertex-hint{margin-right:auto;color:#657970;font-size:11px}

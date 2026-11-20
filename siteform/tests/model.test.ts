@@ -75,3 +75,13 @@ test('homes and density update when frontage or site area changes',()=>{
   assert.equal(development(larger).houses,12)
   assert.equal(development(larger).density,6)
 })
+
+test('indicative GIA deducts apartment external walls and updates with storeys',()=>{
+  const block={...newBlock(sample,'apartment',[[0,0],[40,0]]),floors:2}
+  const project={...sample,blocks:[block]}
+  const floorArea=(40-1.2)*(18-1.2)
+  near(development(project).gia!,floorArea*2)
+  near(blockStats({...block,floors:3},project).gia!,floorArea*3)
+  const house=newBlock(sample,'house',[[0,0],[4.5,0]])
+  near(blockStats(house,sample).gia!,99)
+})
