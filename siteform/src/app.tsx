@@ -8,7 +8,7 @@ import {loadContext,emptyContext,type ContextData} from './context'
 import {blankProject,defaultAddress,isDefaultAddress,restoreProject} from './project'
 import './style.css'
 
-type Tool=BlockType|'select'|'boundary'|'move'|'rotate'|'measure'|'vertices'
+type Tool=BlockType|'select'|'boundary'|'move'|'rotate'|'measure'|'vertices'|'ghost'
 function isBuildingTool(tool:Tool):tool is BlockType {
   return Object.hasOwn(blockTypes,tool)
 }
@@ -58,6 +58,8 @@ function App(){
   const selectedFloor=Math.min(editFloor,Math.max(0,(selected?.floors??1)-1))
   const [camera,setCamera]=useState<Camera>(home)
   const [layers,setLayers]=useState(initialLayers)
+  const [ghosted,setGhosted]=useState<Set<number>>(()=>new Set())
+  useEffect(()=>setGhosted(new Set()),[project.anchor])
   const [nearby,setNearby]=useState<{anchor:Project['anchor'];data:ContextData;status:'loading'|'ready'|'unavailable'}>()
   const [contextAttempt,retryContext]=useState(0)
   const {anchor}=project
@@ -89,7 +91,7 @@ function App(){
   const setbackEdges=useMemo(()=>selectedFloor?snapEdges(project,selectedFloor):[],[project,selectedFloor])
   const [size,setSize]=useState(0)
   const canvas=useRef<HTMLCanvasElement>(null)
-  const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
+  const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,pickContext:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
   const drawingClick=useRef<Point|null>(null)
   const totals=development(project)
@@ -106,8 +108,8 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext})
-  },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus])
+    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,ghosted})
+  },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,ghosted])
   function commit(next:Project){
     setHistory(h=>JSON.stringify(next)===JSON.stringify(h.current)?h:{past:[...h.past.slice(-49),h.current],current:next,future:[]})
   }
@@ -174,6 +176,7 @@ function App(){
     const clicked=scene.current.pick(screen)
     let action:Drag['action']='draw',id=selection,vertex=-1
     if(e.button!==0){action=navigationAction(e.buttons)}
+    else if(tool==='ghost')action='pan'
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
     else if(tool==='select'||tool==='vertices'){
       let distance=12
@@ -317,6 +320,16 @@ function App(){
     if(e.button!==0||d.navigation)return
     if(d.action==='vertices'||d.action==='setback')return
     if(d.action==='height'&&!scene.current.pick(d.screen))return
+    if(tool==='ghost'){
+      const index=scene.current.pickContext(d.screen)
+      if(index!==undefined)setGhosted(previous=>{
+        const next=new Set(previous)
+        if(next.has(index))next.delete(index)
+        else next.add(index)
+        return next
+      })
+      return
+    }
     if(tool==='vertices'){choose('select');setSelection(null);return}
     if(tool==='select'){
       setSelection(scene.current.pick(d.screen))
@@ -395,7 +408,7 @@ function App(){
   }
   const drawTool=tool==='boundary'||isBuildingTool(tool)
   const frontageHint='Click along the frontage. Double-click the last point to finish. The block extends to the right.'
-  const actions:Partial<Record<Tool,string>>={boundary:'Click each boundary corner. Double-click the last corner to finish.',house:'Click along the frontage. Double-click the last point to finish. Houses extend to the right.',apartment:frontageHint,office:frontageHint,pbsa:frontageHint,move:'Drag a block to move it across the site.',rotate:'Drag a block left or right to rotate it about its first frontage point.',measure:'Click two points to measure the distance.',vertices:'Drag a vertex to edit the geometry.'}
+  const actions:Partial<Record<Tool,string>>={boundary:'Click each boundary corner. Double-click the last corner to finish.',house:'Click along the frontage. Double-click the last point to finish. Houses extend to the right.',apartment:frontageHint,office:frontageHint,pbsa:frontageHint,move:'Drag a block to move it across the site.',rotate:'Drag a block left or right to rotate it about its first frontage point.',measure:'Click two points to measure the distance.',vertices:'Drag a vertex to edit the geometry.',ghost:'Click an existing building to toggle its dotted outline.'}
   const s=selected?blockStats(selected,project):null
   const scale=canvas.current?geometry().s:4
   const scaleMetres=scale*20<65?50:scale*20>150?10:20
@@ -457,7 +470,13 @@ function App(){
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['context','Existing buildings'],['streets','Streets'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>(id!=='context'&&id!=='streets')||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>setLayers({...layers,[id]:e.target.checked})}/>{label}</label>)}
+            {([['context','Existing buildings'],['streets','Streets'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>(id!=='context'&&id!=='streets')||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
+              setLayers({...layers,[id]:e.target.checked})
+              if(id==='context'&&!e.target.checked&&tool==='ghost')choose('select')
+            }}/>{label}</label>)}
+            {layers.context&&!!contextStatus?.data.buildings.length&&
+              <Button icon="building" kind="menu-tool" active={tool==='ghost'} onClick={()=>choose(tool==='ghost'?'select':'ghost')}>Ghost existing buildings</Button>}
+            {ghosted.size>0&&<button type="button" onClick={()=>setGhosted(new Set())}>Restore all existing buildings</button>}
             <label className="range">Massing opacity<input aria-label="Massing opacity" type="range" min=".25" max="1" step=".05" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/></label>
           </div>}
         </div>

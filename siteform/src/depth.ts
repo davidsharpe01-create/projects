@@ -1,7 +1,7 @@
 import {inside,type Point} from './model.ts'
 
 export type Depth = (point:Point)=>number
-export type Surface = {shape:Point[];depth:Depth;id?:string;roof?:boolean;floor?:number}
+export type Surface = {shape:Point[];depth:Depth;id?:string;roof?:boolean;floor?:number;contextIndex?:number}
 const tolerance=1e-6
 
 export function depthPlane(a:Point,b:Point,c:Point,za:number,zb:number,zc:number):Depth {
