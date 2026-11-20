@@ -160,13 +160,13 @@ function App(){
     return result.point
   }
   function start(e:PointerEvent<HTMLCanvasElement>){
-    if(e.button!==0&&e.button!==1)return
-    if(e.button===1)e.preventDefault()
+    if(e.button>2)return
+    if(e.button!==0)e.preventDefault()
     setMenu(null)
     const screen=viewPoint(e),point=geometry().invert(screen)
     const clicked=scene.current.pick(screen)
     let action:Drag['action']='draw',id=selection,vertex=-1
-    if(e.button===1){action=plan?'pan':'orbit'}
+    if(e.button!==0){action=e.button===2&&!plan?'orbit':'pan'}
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
     else if(tool==='select'||tool==='vertices'){
       let distance=12
@@ -179,18 +179,18 @@ function App(){
       action=vertex>=0?(setbackHandles.length?'setback':'vertices'):scene.current.heightAt(screen)?'height':'pan'
       if(tool==='vertices')id=null
     }
-    drag.current={screen,point,camera,project,id,action,vertex,changed:false,last:screen,navigation:e.button===1,floor:selectedFloor}
+    drag.current={screen,point,camera,project,id,action,vertex,changed:false,last:screen,navigation:e.button!==0,floor:selectedFloor}
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   function move(e:PointerEvent<HTMLCanvasElement>){
     const screen=viewPoint(e),d=drag.current
     if(drawTool||tool==='measure'){
-      if(!(e.buttons&4))setPointer(drawingPoint(screen))
+      if(!(e.buttons&6))setPointer(drawingPoint(screen))
     }
-    if(d&&(e.buttons&4)){
+    if(d&&(e.buttons&6)){
       d.navigation=true
       setGuide(undefined)
-      const navigation=plan||(e.buttons&1)?'pan':'orbit'
+      const navigation=!plan&&(e.buttons&2)?'orbit':'pan'
       if(d.action!==navigation){
         d.screen=d.last
         d.camera=camera
@@ -445,7 +445,7 @@ function App(){
       <section className="workspace" aria-label="Site workspace">
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
           onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={()=>{drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
-          onAuxClick={e=>{if(e.button===1)e.preventDefault()}}/>
+          onAuxClick={e=>{if(e.button===1)e.preventDefault()}} onContextMenu={e=>e.preventDefault()}/>
         <div className="map-right">
           <button className="compass" type="button" title="Reset view to north" onClick={()=>setCamera({...home,angle:0})}>
             <span>N</span><i style={{transform:'rotate('+(plan?0:camera.angle)+'rad)'}}/>
@@ -558,7 +558,7 @@ function App(){
       <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold both the middle and left buttons to pan while using another tool. In Plan, middle-drag also pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Right-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Middle-drag to pan while using any tool. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
