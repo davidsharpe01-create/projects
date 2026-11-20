@@ -8,7 +8,7 @@ import {loadContext,emptyContext,type ContextData} from './context'
 import {blankProject,defaultAddress,isDefaultAddress,restoreProject} from './project'
 import './style.css'
 
-type Tool=BlockType|'select'|'boundary'|'move'|'rotate'|'measure'|'vertices'|'ghost'
+type Tool=BlockType|'select'|'boundary'|'move'|'rotate'|'measure'|'vertices'|'ghost'|'show'
 function isBuildingTool(tool:Tool):tool is BlockType {
   return Object.hasOwn(blockTypes,tool)
 }
@@ -91,7 +91,7 @@ function App(){
   const setbackEdges=useMemo(()=>selectedFloor?snapEdges(project,selectedFloor):[],[project,selectedFloor])
   const [size,setSize]=useState(0)
   const canvas=useRef<HTMLCanvasElement>(null)
-  const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,pickContext:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
+  const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,pickContext:()=>undefined,pickGhost:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
   const drawingClick=useRef<Point|null>(null)
   const totals=development(project)
@@ -176,7 +176,7 @@ function App(){
     const clicked=scene.current.pick(screen)
     let action:Drag['action']='draw',id=selection,vertex=-1
     if(e.button!==0){action=navigationAction(e.buttons)}
-    else if(tool==='ghost')action='pan'
+    else if(tool==='ghost'||tool==='show')action='pan'
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
     else if(tool==='select'||tool==='vertices'){
       let distance=12
@@ -320,12 +320,13 @@ function App(){
     if(e.button!==0||d.navigation)return
     if(d.action==='vertices'||d.action==='setback')return
     if(d.action==='height'&&!scene.current.pick(d.screen))return
-    if(tool==='ghost'){
-      const index=scene.current.pickContext(d.screen)
+    if(tool==='ghost'||tool==='show'){
+      const hiding=tool==='ghost'
+      const index=hiding?scene.current.pickContext(d.screen):scene.current.pickGhost(d.screen)
       if(index!==undefined)setGhosted(previous=>{
         const next=new Set(previous)
-        if(next.has(index))next.delete(index)
-        else next.add(index)
+        if(hiding)next.add(index)
+        else next.delete(index)
         return next
       })
       return
@@ -408,7 +409,7 @@ function App(){
   }
   const drawTool=tool==='boundary'||isBuildingTool(tool)
   const frontageHint='Click along the frontage. Double-click the last point to finish. The block extends to the right.'
-  const actions:Partial<Record<Tool,string>>={boundary:'Click each boundary corner. Double-click the last corner to finish.',house:'Click along the frontage. Double-click the last point to finish. Houses extend to the right.',apartment:frontageHint,office:frontageHint,pbsa:frontageHint,move:'Drag a block to move it across the site.',rotate:'Drag a block left or right to rotate it about its first frontage point.',measure:'Click two points to measure the distance.',vertices:'Drag a vertex to edit the geometry.',ghost:'Click an existing building to toggle its dotted outline.'}
+  const actions:Partial<Record<Tool,string>>={boundary:'Click each boundary corner. Double-click the last corner to finish.',house:'Click along the frontage. Double-click the last point to finish. Houses extend to the right.',apartment:frontageHint,office:frontageHint,pbsa:frontageHint,move:'Drag a block to move it across the site.',rotate:'Drag a block left or right to rotate it about its first frontage point.',measure:'Click two points to measure the distance.',vertices:'Drag a vertex to edit the geometry.',ghost:'Click an existing building to ghost it.',show:'Click a dotted building to show it.'}
   const s=selected?blockStats(selected,project):null
   const scale=canvas.current?geometry().s:4
   const scaleMetres=scale*20<65?50:scale*20>150?10:20
@@ -476,7 +477,7 @@ function App(){
             <strong>Display layers</strong>
             {([['context','Existing buildings'],['streets','Streets'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>(id!=='context'&&id!=='streets')||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
               setLayers({...layers,[id]:e.target.checked})
-              if(id==='context'&&!e.target.checked&&tool==='ghost')choose('select')
+              if(id==='context'&&!e.target.checked&&(tool==='ghost'||tool==='show'))choose('select')
             }}/>{label}</label>)}
             {ghosted.size>0&&<button type="button" onClick={()=>setGhosted(new Set())}>Restore all existing buildings</button>}
             <label className="range">Massing opacity<input aria-label="Massing opacity" type="range" min=".25" max="1" step=".05" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/></label>
@@ -504,6 +505,8 @@ function App(){
         {actions[tool]&&<div className="draw-message">
           <span>{tool==='measure'&&draft.length===2?format(length(...draft as [Point,Point]),2)+' m':actions[tool]}</span>
           {drawTool&&<button className="primary" onClick={finish}>Finish</button>}
+          {tool==='ghost'&&ghosted.size>0&&<button className="primary" onClick={()=>choose('show')}>Show</button>}
+          {tool==='show'&&<button className="primary" onClick={()=>choose('ghost')}>Ghost</button>}
           {tool==='boundary'&&!draft.length&&project.boundary.length>0&&<button className="primary" onClick={()=>{setSelection(null);choose('vertices')}}>Edit boundary</button>}
           <Button icon="close" kind="square" title="Exit tool" onClick={()=>choose('select')}/>
         </div>}
