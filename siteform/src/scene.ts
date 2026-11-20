@@ -1,10 +1,10 @@
 import { paintMap } from './basemap'
+import { depthPlane, foregroundShape, pickSurface, type Surface } from './depth'
 import { footprints, levels, height, floors, inside, type Point, type Project } from './model'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
 export type Layers = {context:boolean; trees:boolean; grid:boolean; labels:boolean}
 export const initialLayers:Layers={context:true,trees:true,grid:false,labels:true}
-export type Hit={id:string;shape:Point[]}
 const rect=(x:number,y:number,w:number,d:number):Point[]=>[[x,y],[x+w,y],[x+w,y+d],[x,y+d]]
 const siteShapes:Point[][]=[
   [[-192,-115],[-99,-118],[-70,-47],[-77,40],[-113,108],[-182,90]],
@@ -54,7 +54,8 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
     const u=(p[0]-x)/s,v=(p[1]-y)/s/tilt
     return [u*cs+v*sn,-u*sn+v*cs]
   }
-  return {project,invert,s}
+  const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
+  return {project,invert,s,depth}
 }
 type Scene = {camera:Camera;plan:boolean;floor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; refresh:()=>void}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
@@ -64,7 +65,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)
   }
   const {camera,plan,project,selected,draft,pointer,layers,opacity,editFrontage,editBoundary,floor}=scene
-  const {project:xy,invert,s}=projection(w,h,camera,plan)
+  const {project:xy,invert,s,depth}=projection(w,h,camera,plan)
   ctx.setTransform(dpr,0,0,dpr,0,0)
   ctx.fillStyle='#d7dcd0';ctx.fillRect(0,0,w,h)
   ctx.lineJoin='round';ctx.lineCap='round'
@@ -107,8 +108,14 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     world([[29,5],[37,-13]],undefined,'#eee9db',2.4*s,false)
     ctx.restore()
   }
-  const hits:Hit[]=[]
-  const objects:{depth:number;draw:()=>void}[]=[]
+  type Drawable=Surface & {paint:()=>void;bounds:[number,number,number,number]}
+  const surfaces:Drawable[]=[]
+  function addSurface(surface:Surface,paint:()=>void){
+    const xs=surface.shape.map(p=>p[0]),ys=surface.shape.map(p=>p[1])
+    const bounds:Drawable['bounds']=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]
+    if(bounds[2]<-2||bounds[0]>w+2||bounds[3]<-2||bounds[1]>h+2)return
+    surfaces.push({...surface,paint,bounds})
+  }
   type Material={roof:string; walls:string[]; line:string; floor:string}
   const contextMaterial={roof:'#e9e8df',walls:['#cdd1c6','#b9c1b5','#c9cfc2','#d9dad0'],line:'#a5b1a2',floor:'#c8cec3'}
   const green={roof:'#a6c6b8',walls:['#7b9f90','#648e7e','#759c8b','#94b3a5'],line:'#476f61',floor:'#e2eee7'}
@@ -117,30 +124,42 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0)=>{
     const top=poly.map(p=>xy(p,z))
     if(!plan){
+      const winding=poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+p[0]*q[1]-p[1]*q[0]},0)
       poly.forEach((p,i)=>{
         const q=poly[(i+1)%poly.length],a=xy(p,base),b=xy(q,base)
-        if(b[0]-a[0]>=-1e-7)return
-        const side=[a,b,xy(q,z),xy(p,z)]
-        path(side,material.walls[i%4],material.line,.75)
-        storeys.slice(0,-1).forEach(level=>path([xy(p,base+level),xy(q,base+level)],undefined,material.floor,.85,false))
-        if(id)hits.push({id,shape:side})
+        if((b[0]-a[0])*Math.sign(winding)>=-1e-7)return
+        const high=xy(p,z)
+        const shape=[a,b,xy(q,z),high]
+        addSurface({id,shape,depth:depthPlane(a,b,high,depth(p,base),depth(q,base),depth(p,z))},()=>{
+          path(shape,material.walls[i%4],material.line,.75)
+          storeys.slice(0,-1).forEach(level=>path([xy(p,base+level),xy(q,base+level)],undefined,material.floor,.85,false))
+        })
       })
     }
-    path(top,material.roof,material.line,id===selected?1.75:.8)
-    if(id)hits.push({id,shape:top})
+    // A roof is horizontal, so depth across it depends only on screen height.
+    const roofDepth=plan?()=>0:([,y]:Point)=>depth(poly[0],z)+(y-top[0][1])*Math.sqrt(1-camera.tilt**2)/(s*camera.tilt)
+    addSurface({id,shape:top,depth:roofDepth},()=>path(top,material.roof,material.line,id===selected?1.75:.8))
   }
-  const order=(poly:Point[])=>poly.reduce((sum,p)=>sum+xy(p)[1]+xy(p)[0]*.11,0)/poly.length
-  if(layers.context&&!project.anchor) buildings.forEach(({poly,z})=>objects.push({depth:order(poly),draw:()=>face(poly,z,contextMaterial,[])}))
+  if(layers.context&&!project.anchor) buildings.forEach(({poly,z})=>face(poly,z,contextMaterial,[]))
   if(layers.trees&&!project.anchor) visibleTrees.filter(({p})=>!inside(p,boundary)).forEach(({p,r,h,c})=>{
-    objects.push({depth:order([p]),draw:()=>{
-      const [x,y]=xy(p,plan?0:h*.55)
-      if(!plan)path([xy(p),[x,y]],undefined,'#879484',Math.max(.6,s*.19),false)
-      const drawRadius=r*s
-      ctx.beginPath();ctx.ellipse(x,y,drawRadius,drawRadius*(plan?1:.76),0,0,2*Math.PI)
-      ctx.fillStyle=['#aabca8','#9eb29e','#b4c2ad','#a5b7a0'][c];ctx.fill()
-      ctx.beginPath();ctx.ellipse(x-drawRadius*.13,y-drawRadius*.19,drawRadius*.66,drawRadius*.49,0,0,2*Math.PI)
+    const z=plan?0:h*.55
+    const [x,y]=xy(p,z),[groundX,groundY]=xy(p)
+    const radius=r*s,ry=radius*(plan?1:.76)
+    const canopy=Array.from({length:24},(_,i):Point=>{
+      const angle=i*Math.PI/12
+      return [x+radius*Math.cos(angle),y+ry*Math.sin(angle)]
+    })
+    const treeDepth=depth(p,z)
+    if(!plan&&groundY>y+ry){
+      const halfWidth=Math.max(.6,s*.19)/2
+      addSurface({shape:rect(groundX-halfWidth,y,2*halfWidth,groundY-y),depth:([,sy])=>treeDepth+
+        (sy-y)/(groundY-y)*(depth(p)-treeDepth)},()=>path([xy(p),[x,y]],undefined,'#879484',2*halfWidth,false))
+    }
+    addSurface({shape:canopy,depth:()=>treeDepth},()=>{
+      path(canopy,['#aabca8','#9eb29e','#b4c2ad','#a5b7a0'][c])
+      ctx.beginPath();ctx.ellipse(x-radius*.13,y-radius*.19,radius*.66,radius*.49,0,0,2*Math.PI)
       ctx.fillStyle='#d8e0ce55';ctx.fill()
-    }})
+    })
   })
   const labels:{p:Point;name:string;selected:boolean}[]=[]
   project.blocks.forEach(b=>{
@@ -150,17 +169,35 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     const roof=project.colours[b.houseType]
     const material=b.type==='house'?{...house,roof,line:b.id===selected?'#286957':house.line}:b.id===selected?active:green
     const group=polys.flat()
-    polys.forEach(poly=>objects.push({depth:order(poly),draw:()=>{
-      ctx.globalAlpha=opacity
-      face(poly,z,material,levels(b),b.id,plan?0:b.level)
-      ctx.globalAlpha=1
-    }}))
+    polys.forEach(poly=>face(poly,z,material,levels(b),b.id,plan?0:b.level))
     if(group.length&&(b.id===selected||(plan&&layers.labels))){
       const center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)
       labels.push({p:xy(center,z),name:b.name,selected:b.id===selected})
     }
   })
-  objects.sort((a,b)=>a.depth-b.depth).forEach(item=>item.draw())
+  surfaces.forEach((surface,index)=>{
+    ctx.save()
+    if(surface.id)ctx.globalAlpha=opacity
+    if(!plan){
+      const [left,top,right,bottom]=surface.bounds
+      // Clip only where another face projects in front of this one.
+      surfaces.forEach((other,i)=>{
+        if(i===index||(!surface.id&&other.id&&opacity<1))return
+        const [x,y,r,b]=other.bounds
+        if(r<=left||x>=right||b<=top||y>=bottom)return
+        const mask=foregroundShape(surface,other,i>index)
+        if(mask.length<3)return
+        ctx.beginPath()
+        ctx.rect(-2,-2,w+4,h+4)
+        ctx.moveTo(...mask[0])
+        mask.slice(1).forEach(p=>ctx.lineTo(...p))
+        ctx.closePath()
+        ctx.clip('evenodd')
+      })
+    }
+    surface.paint()
+    ctx.restore()
+  })
   labels.forEach(({p:[x,y],name,selected:chosen})=>{
     ctx.font='600 11px system-ui'
     const width=ctx.measureText(name).width+21
@@ -183,5 +220,5 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.beginPath();ctx.arc(...p,r,0,2*Math.PI);ctx.fillStyle='#fffdf5';ctx.fill()
     ctx.strokeStyle=colour;ctx.lineWidth=2;ctx.stroke()
   }
-  return {hits,handles}
+  return {pick:(point:Point)=>pickSurface(surfaces,point),handles}
 }

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
-import { sample, length, footprintSatisfies, frontage, floors, height, inside, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
+import { sample, length, footprintSatisfies, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
 import './style.css'
 
@@ -63,7 +63,7 @@ function App(){
   const [snap,setSnap]=useState(true)
   const [size,setSize]=useState(0)
   const canvas=useRef<HTMLCanvasElement>(null)
-  const scene=useRef<ReturnType<typeof draw>>({hits:[],handles:[]})
+  const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,handles:[]})
   const drag=useRef<Drag|null>(null)
   const clipboard=useRef<Block|null>(null)
   const totals=development(project)
@@ -155,7 +155,7 @@ function App(){
     if(e.button>2)return
     setMenu(null)
     const screen=viewPoint(e),point=worldPoint(screen)
-    const clicked=scene.current.hits.findLast(h=>inside(screen,h.shape))?.id??null
+    const clicked=scene.current.pick(screen)
     let action:Drag['action']='draw',id=selection,vertex=-1
     if(e.button!==0||e.shiftKey){action=e.button===2&&!e.shiftKey&&!plan?'orbit':'pan'}
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
@@ -216,7 +216,7 @@ function App(){
     if(e.button!==0||e.shiftKey)return
     if(d.action==='vertices')return
     if(tool==='vertices'){choose('select');setSelection(null);return}
-    if(tool==='select'){setSelection(scene.current.hits.findLast(h=>inside(d.screen,h.shape))?.id??null);return}
+    if(tool==='select'){setSelection(scene.current.pick(d.screen));return}
     if(['boundary','house','apartment','measure'].includes(tool)){
       if(tool==='measure'&&draft.length===2){setDraft([d.point]);return}
       if(draft.length&&length(draft.at(-1)!,d.point)<.05)return
