@@ -15,7 +15,7 @@ Open http://localhost:4173. Use Node.js 24 or newer.
 
 Click the site location badge to enter latitude and longitude and load an OpenStreetMap basemap. The original context is illustrative. Model coordinates are in local metres, with east and south positive. The map transform uses a local approximation at the selected origin.
 
-Click each boundary corner or frontage vertex in order and press **Finish**. Draw frontages so the building projects to the right of the drawing direction. Click a building to inspect its properties or select **Edit vertices** to drag its frontage points. To edit the redline vertices, clear the building selection and press **E**. Shift-drag to pan, scroll to zoom, and drag in 3D to orbit. Use **Export** for CSV or a JSON copy.
+Click each boundary corner or frontage vertex in order and press **Finish**. Draw frontages so the building projects to the right of the drawing direction. Click a building to inspect its properties or select **Edit vertices** to drag its frontage points. To edit the redline vertices, clear the building selection and press **E**. With Select active, left-drag to pan. Right-drag in 3D to orbit, shift-drag to pan while editing, and scroll to zoom. Use **Export** for CSV or a JSON copy.
 
 ## Architecture and measurements
 
