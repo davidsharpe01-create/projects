@@ -161,6 +161,9 @@ function App(){
     setGuide(result.guide)
     return result.point
   }
+  function navigationAction(buttons:number){
+    return plan||((buttons&1)&&!(buttons&2))?'pan':'orbit'
+  }
   function start(e:PointerEvent<HTMLCanvasElement>){
     drawingClick.current=null
     if(e.button>2)return
@@ -169,7 +172,7 @@ function App(){
     const screen=viewPoint(e),point=geometry().invert(screen)
     const clicked=scene.current.pick(screen)
     let action:Drag['action']='draw',id=selection,vertex=-1
-    if(e.button!==0){action=e.button===2&&!plan?'orbit':'pan'}
+    if(e.button!==0){action=navigationAction(e.buttons)}
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
     else if(tool==='select'||tool==='vertices'){
       let distance=12
@@ -193,7 +196,7 @@ function App(){
     if(d&&(e.buttons&6)){
       d.navigation=true
       setGuide(undefined)
-      const navigation=!plan&&(e.buttons&2)?'orbit':'pan'
+      const navigation=navigationAction(e.buttons)
       if(d.action!==navigation){
         d.screen=d.last
         d.camera=camera
@@ -576,7 +579,7 @@ function App(){
       <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Right-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Middle-drag to pan while using any tool. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Right-drag or middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold middle and left together to pan while editing. In Plan, middle-drag pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
