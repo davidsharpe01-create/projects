@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type BlockType, type Point, type Project } from './model'
@@ -90,6 +90,7 @@ function App(){
   const canvas=useRef<HTMLCanvasElement>(null)
   const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
+  const drawingClick=useRef<Point|null>(null)
   const totals=development(project)
   const warnings=project.blocks.flatMap(b=>blockStats(b,project).outside?[b.name+' extends beyond the site boundary.']:[])
   if(totals.gia===null)warnings.push('GIA is unavailable where an internal footprint cannot be calculated.')
@@ -160,6 +161,7 @@ function App(){
     return result.point
   }
   function start(e:PointerEvent<HTMLCanvasElement>){
+    drawingClick.current=null
     if(e.button>2)return
     if(e.button!==0)e.preventDefault()
     setMenu(null)
@@ -316,14 +318,24 @@ function App(){
       setEditFloor(plan?0:scene.current.pickFloor(d.screen))
       return
     }
-    if(drawTool||tool==='measure'){
-      const point=drawingPoint(d.screen)
-      setGuide(undefined)
-      if(tool==='measure'&&draft.length===2){setDraft([point]);return}
-      if(draft.length&&length(draft.at(-1)!,point)<.05)return
-      setDraft([...draft,point])
-      setPointer(null)
-    }
+    if(drawTool)drawingClick.current=d.screen
+    else if(tool==='measure')placePoint(d.screen)
+  }
+  function placePoint(screen:Point){
+    const point=drawingPoint(screen)
+    setGuide(undefined)
+    if(tool==='measure'&&draft.length===2){setDraft([point]);return}
+    if(draft.length&&length(draft.at(-1)!,point)<.05)return
+    setDraft([...draft,point])
+    setPointer(null)
+  }
+  function clickDrawing(e:MouseEvent<HTMLCanvasElement>){
+    const screen=drawingClick.current
+    drawingClick.current=null
+    if(!screen||!drawTool)return
+    // The first click already placed the final vertex.
+    if(e.detail===2)finish()
+    else if(e.detail<2)placePoint(screen)
   }
   function zoom(delta:number,anchor?:Point){
     setCamera(c=>{
@@ -377,8 +389,8 @@ function App(){
     setMenu(null)
   }
   const drawTool=tool==='boundary'||isBuildingTool(tool)
-  const frontageHint='Click frontage points in order. The block extends to the right of the drawing direction.'
-  const actions:Partial<Record<Tool,string>>={boundary:'Click each corner of the redline, then finish to close it.',house:'Click frontage points in order. Houses extend to the right of the drawing direction.',apartment:frontageHint,office:frontageHint,pbsa:frontageHint,move:'Drag a block to move it across the site.',rotate:'Drag a block left or right to rotate it about its first frontage point.',measure:'Click two points to measure the distance.',vertices:'Drag a vertex to edit the geometry.'}
+  const frontageHint='Click along the frontage. Double-click the last point to finish. The block extends to the right.'
+  const actions:Partial<Record<Tool,string>>={boundary:'Click each boundary corner. Double-click the last corner to finish.',house:'Click along the frontage. Double-click the last point to finish. Houses extend to the right.',apartment:frontageHint,office:frontageHint,pbsa:frontageHint,move:'Drag a block to move it across the site.',rotate:'Drag a block left or right to rotate it about its first frontage point.',measure:'Click two points to measure the distance.',vertices:'Drag a vertex to edit the geometry.'}
   const s=selected?blockStats(selected,project):null
   const scale=canvas.current?geometry().s:4
   const scaleMetres=scale*20<65?50:scale*20>150?10:20
@@ -444,7 +456,7 @@ function App(){
     <main>
       <section className="workspace" aria-label="Site workspace">
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
-          onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={()=>{drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
+          onPointerDown={start} onPointerMove={move} onPointerUp={end} onClick={clickDrawing} onPointerCancel={()=>{drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
           onAuxClick={e=>{if(e.button===1)e.preventDefault()}} onContextMenu={e=>e.preventDefault()}/>
         <div className="map-right">
           <button className="compass" type="button" title="Reset view to north" onClick={()=>setCamera({...home,angle:0})}>
