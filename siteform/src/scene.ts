@@ -1,3 +1,4 @@
+import type {SnapGuide} from './snap'
 import { paintMap } from './basemap'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
 import { footprints, levels, height, floors, floorOutline, endInset, inside, type Point, type Project } from './model'
@@ -57,14 +58,14 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
   return {project,invert,s,depth}
 }
-type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; refresh:()=>void}
+type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; refresh:()=>void}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
   if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){
     canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)
   }
-  const {camera,plan,project,selected,draft,pointer,layers,opacity,editFrontage,editBoundary,floor,editFloor}=scene
+  const {camera,plan,project,selected,draft,pointer,guide,layers,opacity,editFrontage,editBoundary,floor,editFloor}=scene
   const {project:xy,invert,s,depth}=projection(w,h,camera,plan)
   ctx.setTransform(dpr,0,0,dpr,0,0)
   ctx.fillStyle='#d7dcd0';ctx.fillRect(0,0,w,h)
@@ -255,6 +256,23 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     world(draft,undefined,'#a14a42',2,false)
     if(pointer){ctx.setLineDash([5,5]);world([draft.at(-1)!,pointer],undefined,'#a14a42',1.6,false);ctx.setLineDash([])}
     draft.forEach(p=>dot(xy(p),'#aa5049',4.2))
+  }
+  if(guide){
+    const colour='#6953a2'
+    const level=guide.level??0
+    ctx.setLineDash([4,4])
+    world([guide.edge.a,guide.edge.b],undefined,colour,2,false,level)
+    if(guide.anchor)world([guide.anchor,guide.point],undefined,colour,1.6,false,level)
+    ctx.setLineDash([])
+    const point=xy(guide.point,level)
+    dot(point,colour,5)
+    ctx.font='600 11px system-ui'
+    const width=ctx.measureText(guide.label).width+14
+    const x=Math.min(w-width-4,Math.max(4,point[0]+10)),y=Math.max(4,point[1]-27)
+    ctx.beginPath();ctx.roundRect(x,y,width,19,4)
+    ctx.fillStyle=colour;ctx.fill()
+    ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='white'
+    ctx.fillText(guide.label,x+7,y+10)
   }
   function dot(p:Point,colour:string,r:number){
     ctx.beginPath();ctx.arc(...p,r,0,2*Math.PI);ctx.fillStyle='#fffdf5';ctx.fill()

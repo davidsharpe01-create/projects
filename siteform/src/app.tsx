@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
-import { sample, apartmentStoreys, adjustSetback, endDirection, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
+import { sample, apartmentStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
+import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import './style.css'
 
 type Tool='select'|'boundary'|'house'|'apartment'|'move'|'rotate'|'measure'|'vertices'
@@ -63,6 +64,9 @@ function App(){
   const [notice,setNotice]=useState('')
   const [saved,setSaved]=useState(true)
   const [snap,setSnap]=useState(true)
+  const [guide,setGuide]=useState<SnapGuide>()
+  const edges=useMemo(()=>snapEdges(project,plan?floor:0),[project,plan,floor])
+  const setbackEdges=useMemo(()=>selectedFloor?snapEdges(project,selectedFloor):[],[project,selectedFloor])
   const [size,setSize]=useState(0)
   const canvas=useRef<HTMLCanvasElement>(null)
   const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
@@ -81,15 +85,15 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',refresh:()=>setSize(n=>n+1)})
-  },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,size,layers,opacity,tool])
+    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',refresh:()=>setSize(n=>n+1)})
+  },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool])
   function commit(next:Project){
     setHistory(h=>JSON.stringify(next)===JSON.stringify(h.current)?h:{past:[...h.past.slice(-49),h.current],current:next,future:[]})
   }
   function undo(){setHistory(h=>h.past.length?{past:h.past.slice(0,-1),current:h.past.at(-1)!,future:[h.current,...h.future]}:h)}
   function redo(){setHistory(h=>h.future.length?{past:[...h.past,h.current],current:h.future[0],future:h.future.slice(1)}:h)}
   function choose(next:Tool){
-    setDraft([]);setNotice('');setTool(next);setMenu(null)
+    setDraft([]);setGuide(undefined);setNotice('');setTool(next);setMenu(null)
     if(next==='boundary'||next==='house'||next==='apartment'||next==='measure'||next==='vertices'){setPlan(true);setFloor(0)}
   }
   function switchView(next:boolean){setPlan(next);if(!next)setFloor(0);if(draft.length||tool==='vertices')choose('select')}
@@ -128,15 +132,19 @@ function App(){
   function geometry(c:Camera=camera){
     return projection(canvas.current!.clientWidth,canvas.current!.clientHeight,c,plan)
   }
-  function worldPoint(screen:Point,c:Camera=camera):Point{
-    const p=geometry(c).invert(screen)
-    return snap?p.map(n=>Math.round(n*2)/2) as Point:p
+  function drawingPoint(screen:Point){
+    const {project:toScreen,invert}=geometry()
+    const point=invert(screen)
+    const anchor=draft.at(-1)
+    const result=snap?snapPoint(point,edges,toScreen,anchor?[anchor]:[]):{point,guide:undefined}
+    setGuide(result.guide)
+    return result.point
   }
   function start(e:PointerEvent<HTMLCanvasElement>){
     if(e.button!==0&&e.button!==1)return
     if(e.button===1)e.preventDefault()
     setMenu(null)
-    const screen=viewPoint(e),point=worldPoint(screen)
+    const screen=viewPoint(e),point=geometry().invert(screen)
     const clicked=scene.current.pick(screen)
     let action:Drag['action']='draw',id=selection,vertex=-1
     if(e.button===1){action=plan?'pan':'orbit'}
@@ -157,9 +165,12 @@ function App(){
   }
   function move(e:PointerEvent<HTMLCanvasElement>){
     const screen=viewPoint(e),d=drag.current
-    if(draft.length)setPointer(worldPoint(screen))
+    if(drawTool||tool==='measure'){
+      if(!(e.buttons&4))setPointer(drawingPoint(screen))
+    }
     if(d&&(e.buttons&4)){
       d.navigation=true
+      setGuide(undefined)
       const navigation=plan||(e.buttons&1)?'pan':'orbit'
       if(d.action!==navigation){
         d.screen=d.last
@@ -197,8 +208,16 @@ function App(){
       if(squared<.0625)return
       const movement=(offset[0]*x+offset[1]*y)/squared
       const step=snap?.5:0
-      const delta=step?Math.round(movement/step)*step:movement
-      const updated=adjustSetback(block,d.project.targets,d.floor,d.vertex,delta,step)
+      const origin=d.vertex?block.line.at(-1)!:block.line[0]
+      const inset=endInset(block,d.floor)[d.vertex]
+      const start:Point=[origin[0]+direction[0]*inset,origin[1]+direction[1]*inset]
+      const match=snap?snapAlong(start,direction,movement,setbackEdges.filter(edge=>edge.block!==block.id),toScreen):undefined
+      const delta=match?.movement??(step?Math.round(movement/step)*step:movement)
+      const updated=adjustSetback(block,d.project.targets,d.floor,d.vertex,delta,match?0:step)
+      const applied=endInset(updated,d.floor)[d.vertex]-inset
+      const heights=levels(block)
+      const level=block.level+(heights[d.floor-1]+heights[d.floor])/2
+      setGuide(match&&Math.abs(applied-delta)<1e-6?{...match.guide,level}:undefined)
       setPreview({...d.project,blocks:d.project.blocks.map(b=>b===block?updated:b)})
       return
     }
@@ -210,32 +229,57 @@ function App(){
       setCamera({...next,pan:[next.pan[0]+dx,next.pan[1]+dy]})
     }
     if(d.action==='pan')setCamera({...d.camera,pan:[d.camera.pan[0]+offset[0],d.camera.pan[1]+offset[1]]})
-    let point=worldPoint(screen,d.camera)
+    if(d.action!=='vertices'&&d.action!=='move'&&d.action!=='rotate')return
+    const {project:toScreen,invert}=geometry(d.camera)
+    const block=d.project.blocks.find(b=>b.id===d.id)
+    const references=edges.filter(edge=>block?edge.block!==block.id:edge.source!=='boundary')
+    const level=plan?0:block?.level??0
     if(d.action==='vertices'){
-      const origin=d.id?d.project.blocks.find(b=>b.id===d.id)!.line[d.vertex]:d.project.boundary[d.vertex]
-      const {invert,project:toScreen}=geometry(d.camera)
+      const line=block?.line??d.project.boundary
+      const origin=line[d.vertex]
       const [x,y]=toScreen(origin)
-      point=invert([x+offset[0],y+offset[1]])
-      if(snap)point=point.map(n=>Math.round(n*2)/2) as Point
+      const raw=invert([x+offset[0],y+offset[1]])
+      const anchors=[line[d.vertex-1]??(!block?line.at(-1):undefined),line[d.vertex+1]??(!block?line[0]:undefined)].filter((p):p is Point=>!!p)
+      const result=snap?snapPoint(raw,references,toScreen,anchors):{point:raw,guide:undefined}
+      setGuide(result.guide&&{...result.guide,level})
+      const updated=line.map((p,i)=>i===d.vertex?result.point:p)
+      setPreview(block?{...d.project,blocks:d.project.blocks.map(b=>b===block?{...b,line:updated}:b)}:{...d.project,boundary:updated})
+      return
     }
-    if(d.action==='vertices'&&d.vertex>=0&&!d.id)setPreview({...d.project,boundary:d.project.boundary.map((p,i)=>i===d.vertex?point:p)})
-    if(d.id&&['move','rotate','vertices'].includes(d.action)){
-      const delta=pointDiff(point,d.point)
-      setPreview({...d.project,blocks:d.project.blocks.map(b=>{
-        if(b.id!==d.id)return b
-        const [x,y]=b.line[0],angle=offset[0]*.012
-        const line=b.line.map(([px,py],i):Point=>{
-          if(d.action==='vertices')return i===d.vertex?point:[px,py]
-          if(d.action==='move')return [px+delta[0],py+delta[1]]
-          return [x+(px-x)*Math.cos(angle)-(py-y)*Math.sin(angle),y+(px-x)*Math.sin(angle)+(py-y)*Math.cos(angle)]
-        })
-        return {...b,line}
-      })})
+    if(!block)return
+    let line:Point[]
+    if(d.action==='move'){
+      let delta=pointDiff(invert(screen),d.point)
+      let guide:SnapGuide|undefined
+      if(snap){
+        let best=Infinity,anchor:Point|undefined
+        for(const [x,y] of footprints(block,d.project.targets).flat()){
+          const raw:Point=[x+delta[0],y+delta[1]]
+          const target=snapPoint(raw,references,toScreen).guide
+          if(!target)continue
+          const dist=length(toScreen(raw),toScreen(target.point))
+          if(dist<best){best=dist;guide=target;anchor=[x,y]}
+        }
+        if(guide&&anchor)delta=pointDiff(guide.point,anchor)
+        else delta=delta.map(n=>Math.round(n*2)/2) as Point
+      }
+      setGuide(guide&&{...guide,level})
+      line=block.line.map(([x,y])=>[x+delta[0],y+delta[1]])
+    }else{
+      const [x,y]=block.line[0],other=block.line[1]
+      const heading=Math.atan2(other[1]-y,other[0]-x)
+      const raw=offset[0]*.012
+      const match=snap?snapAngle(heading+raw,references):undefined
+      const angle=match?match.angle-heading:raw
+      line=block.line.map(([px,py])=>[x+(px-x)*Math.cos(angle)-(py-y)*Math.sin(angle),y+(px-x)*Math.sin(angle)+(py-y)*Math.cos(angle)])
+      setGuide(match&&{...match,point:line[1],anchor:line[0],level})
     }
+    setPreview({...d.project,blocks:d.project.blocks.map(b=>b===block?{...b,line}:b)})
   }
   function end(e:PointerEvent<HTMLCanvasElement>){
     const d=drag.current;drag.current=null
     if(!d)return
+    setGuide(undefined)
     if(d.changed){
       if(preview){
         if((!preview.boundary.length||validPolygon(preview.boundary))&&preview.blocks.every(b=>footprintSatisfies(b,preview.targets)))commit(preview)
@@ -254,9 +298,11 @@ function App(){
       return
     }
     if(['boundary','house','apartment','measure'].includes(tool)){
-      if(tool==='measure'&&draft.length===2){setDraft([d.point]);return}
-      if(draft.length&&length(draft.at(-1)!,d.point)<.05)return
-      setDraft([...draft,d.point])
+      const point=drawingPoint(d.screen)
+      setGuide(undefined)
+      if(tool==='measure'&&draft.length===2){setDraft([point]);return}
+      if(draft.length&&length(draft.at(-1)!,point)<.05)return
+      setDraft([...draft,point])
       setPointer(null)
     }
   }
@@ -347,7 +393,7 @@ function App(){
     <main>
       <section className="workspace" aria-label="Site workspace">
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
-          onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={()=>{drag.current=null;setPreview(null)}}
+          onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={()=>{drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
           onAuxClick={e=>{if(e.button===1)e.preventDefault()}}/>
         <div className="site-location">
           <button className="site-title" type="button" aria-expanded={menu==='location'} onClick={()=>setOption('location')}>
@@ -464,9 +510,9 @@ function App(){
     </main>
     <footer>
       <div><span className="status-dot"/><strong>{plan?'Plan view':'3D view'}</strong><span className="foot-divider"/><span>Local coordinates · metres</span></div>
-      <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>setSnap(e.target.checked)}/>Snap to 0.5 m</label>
+      <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold both the middle and left buttons to pan while using another tool. In Plan, middle-drag also pans. Scroll to zoom around the cursor.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=15/52.48/-1.90" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold both the middle and left buttons to pan while using another tool. In Plan, middle-drag also pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=15/52.48/-1.90" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
