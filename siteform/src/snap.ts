@@ -21,7 +21,7 @@ export function snapEdges(project:Project,floor:number) {
   project.blocks.forEach(block=>{
     if(floor>=floors(block))return
     footprints(block,project.targets).forEach(poly=>
-      add(block.type==='apartment'?floorOutline(block,poly,floor):poly,'building',block.id))
+      add(block.type!=='house'?floorOutline(block,poly,floor):poly,'building',block.id))
   })
   return edges
 }

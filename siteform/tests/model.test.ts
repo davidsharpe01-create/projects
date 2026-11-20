@@ -116,3 +116,14 @@ test('ends on a bent frontage can be shortened while retaining the corner',()=>{
   near(area(outline)-area(upper),11*block.depth)
   assert.ok(footprintSatisfies(both,sample.targets))
 })
+
+test('office and PBSA use their own depths and contribute GIA without adding homes',()=>{
+  const office=newBlock(sample,'office',[[0,0],[40,0]])
+  const pbsa=newBlock({...sample,blocks:[office]},'pbsa',[[0,30],[50,30]])
+  assert.equal(office.depth,18)
+  assert.equal(pbsa.depth,16)
+  near(blockStats(office,sample).gia!,(40-1.2)*(18-1.2)*office.floors)
+  near(blockStats(pbsa,sample).gia!,(50-1.2)*(16-1.2)*pbsa.floors)
+  assert.equal(development({...sample,blocks:[office,pbsa]}).houses,0)
+  assert.deepEqual(endInset(adjustSetback(pbsa,sample.targets,1,0,5,.5),1),[5,0])
+})

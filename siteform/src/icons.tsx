@@ -3,6 +3,8 @@ const icons:Record<string,string>={
   mouse:'m5 3 15 9-7 1-3 7L5 3Z',
   boundary:'M6 4h12M4 6v12m16-12v12M6 20h12M2 2h4v4H2zm16 0h4v4h-4ZM2 18h4v4H2zm16 0h4v4h-4z',
   house:'m3 11 9-7 9 7m-2-2v11H5V9m5 11v-6h4v6',
+  office:'M3 21h18M5 21V8h6V3h8v18M8 11h.1M8 15h.1M14 6h2m-2 4h2m-2 4h2m-2 4h2',
+  pbsa:'M3 20V5m0 12h18m0 3v-6a3 3 0 0 0-3-3h-7v6m-8-6h8m-6-2a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z',
   building:'M5 21V3h14v18M3 21h18M9 7h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1m-4 6v-3h2v3',
   move:'M12 3v18M3 12h18m-12-6 3-3 3 3m-6 12 3 3 3-3M6 9l-3 3 3 3m12-6 3 3-3 3',
   rotate:'M20 10a8 8 0 1 0-2 8m2-14v6h-6',

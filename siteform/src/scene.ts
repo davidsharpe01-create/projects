@@ -120,7 +120,11 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   type Material={roof:string; walls:string[]; line:string; floor:string}
   const contextMaterial={roof:'#e9e8df',walls:['#cdd1c6','#b9c1b5','#c9cfc2','#d9dad0'],line:'#a5b1a2',floor:'#c8cec3'}
   const green={roof:'#a6c6b8',walls:['#7b9f90','#648e7e','#759c8b','#94b3a5'],line:'#476f61',floor:'#e2eee7'}
-  const active={roof:'#b7d7ca',walls:['#81ab9b','#568675','#6e9b8c','#9bc1b3'],line:'#286957',floor:'#d5e7df'}
+  const bulk={
+    apartment:green,
+    office:{roof:'#adbfdb',walls:['#829ab7','#6985a8','#7890b0','#98acc6'],line:'#4e6789',floor:'#e1e9f5'},
+    pbsa:{roof:'#c8b8da',walls:['#a291ba','#8b77a6','#9c88b1','#b0a0c5'],line:'#69527e',floor:'#ede6f5'}
+  }
   const house={roof:'#d8b284',walls:['#b28b61','#a67d55','#b59069','#c6a27a'],line:'#8f6f50',floor:'#e4c8a8'}
   const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true)=>{
     const top=poly.map(p=>xy(p,z))
@@ -169,9 +173,11 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     if(plan && floor>=levels(b).length)return
     const polys=footprints(b,project.targets),z=plan?0:height(b)+b.level
     const roof=project.colours[b.houseType]
-    const material=b.type==='house'?{...house,roof,line:b.id===selected?'#286957':house.line}:b.id===selected?active:green
+    const material=b.type==='house'?{...house,roof,line:b.id===selected?'#286957':house.line}:
+      b.id===selected&&b.type==='apartment'?{roof:'#b7d7ca',walls:['#81ab9b','#568675','#6e9b8c','#9bc1b3'],line:'#286957',floor:'#d5e7df'}:
+      bulk[b.type]
     let group=polys.flat()
-    if(b.type==='apartment'&&polys[0]){
+    if(b.type!=='house'&&polys[0]){
       const heights=levels(b)
       if(plan){
         const poly=floorOutline(b,polys[0],floor)
@@ -195,7 +201,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     }
     if(group.length&&(b.id===selected||(plan&&layers.labels))){
       const center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)
-      const resize=!plan&&editFrontage&&b.id===selected&&b.type==='apartment'
+      const resize=!plan&&editFrontage&&b.id===selected&&b.type!=='house'
       const name=resize?b.name+'  ↕  '+b.floors+'F':b.name
       labels.push({p:xy(center,z),name,selected:b.id===selected,resize})
     }
@@ -234,7 +240,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   })
   const block=editFrontage?project.blocks.find(b=>b.id===selected && (!plan||floor<floors(b))):undefined
   const setbackHandles:Point[]=[]
-  if(block?.type==='apartment'&&!plan&&editFloor>0&&editFloor<block.floors){
+  if(block&&block.type!=='house'&&!plan&&editFloor>0&&editFloor<block.floors){
     const outline=footprints(block,project.targets)[0]
     if(outline){
       const poly=floorOutline(block,outline,editFloor)
@@ -247,7 +253,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       setbackHandles.forEach(p=>dot(p,'#215a7b',6.5))
     }
   }
-  const handles=block&&(!(plan?floor:editFloor)||block.type!=='apartment')
+  const handles=block&&(!(plan?floor:editFloor)||block.type==='house')
     ?block.line.map(p=>xy(p,plan?0:block.level))
     :editBoundary?boundary.map(p=>xy(p)):[]
   if(block)path(handles,undefined,'#176f59',2,false)

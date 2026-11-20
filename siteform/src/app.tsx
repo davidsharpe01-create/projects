@@ -1,15 +1,19 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
-import { sample, apartmentStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
+import { sample, blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type BlockType, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import './style.css'
 
-type Tool='select'|'boundary'|'house'|'apartment'|'move'|'rotate'|'measure'|'vertices'
+type Tool=BlockType|'select'|'boundary'|'move'|'rotate'|'measure'|'vertices'
+function isBuildingTool(tool:Tool):tool is BlockType {
+  return Object.hasOwn(blockTypes,tool)
+}
 const tools:{id:Tool;icon:string;name:string}[]=[
   {id:'select',icon:'mouse',name:'Select'},{id:'boundary',icon:'boundary',name:'Boundary'},
   {id:'house',icon:'house',name:'House run'},{id:'apartment',icon:'building',name:'Apartment'},
+  {id:'office',icon:'office',name:'Office'},{id:'pbsa',icon:'pbsa',name:'PBSA'},
   {id:'move',icon:'move',name:'Move'},{id:'rotate',icon:'rotate',name:'Rotate'},
   {id:'measure',icon:'ruler',name:'Measure'}
 ]
@@ -94,7 +98,7 @@ function App(){
   function redo(){setHistory(h=>h.future.length?{past:[...h.past,h.current],current:h.future[0],future:h.future.slice(1)}:h)}
   function choose(next:Tool){
     setDraft([]);setGuide(undefined);setNotice('');setTool(next);setMenu(null)
-    if(next==='boundary'||next==='house'||next==='apartment'||next==='measure'||next==='vertices'){setPlan(true);setFloor(0)}
+    if(next==='boundary'||isBuildingTool(next)||next==='measure'||next==='vertices'){setPlan(true);setFloor(0)}
   }
   function switchView(next:boolean){setPlan(next);if(!next)setFloor(0);if(draft.length||tool==='vertices')choose('select')}
   function setOption(next:typeof menu){setMenu(m=>m===next?null:next)}
@@ -106,7 +110,7 @@ function App(){
     if(tool==='boundary'){
       if(!validPolygon(draft)){setNotice('Draw at least three corners without crossing the boundary.');return}
       commit({...project,boundary:draft});setSelection(null)
-    }else if(tool==='house'||tool==='apartment'){
+    }else if(isBuildingTool(tool)){
       if(draft.length<2){setNotice('Add at least two frontage points.');return}
       const block=newBlock(project,tool,draft)
       if(!footprintSatisfies(block,project.targets)){setNotice(tool==='house'?'Use a frontage of at least 4.5 m and avoid overlapping house segments.':'The frontage creates an invalid footprint. Try a wider turn.');return}
@@ -193,7 +197,7 @@ function App(){
       setPreview({...d.project,blocks:d.project.blocks.map(b=>{
         if(b.id!==d.id)return b
         const delta=Math.round(-offset[1]/(pixelsPerMetre*b.upper))
-        const floors=Math.min(apartmentStoreys.max,Math.max(apartmentStoreys.min,b.floors+delta))
+        const floors=Math.min(blockStoreys.max,Math.max(blockStoreys.min,b.floors+delta))
         return resizeStoreys(b,floors)
       })})
       return
@@ -297,7 +301,7 @@ function App(){
       setEditFloor(plan?0:scene.current.pickFloor(d.screen))
       return
     }
-    if(['boundary','house','apartment','measure'].includes(tool)){
+    if(drawTool||tool==='measure'){
       const point=drawingPoint(d.screen)
       setGuide(undefined)
       if(tool==='measure'&&draft.length===2){setDraft([point]);return}
@@ -357,8 +361,9 @@ function App(){
     setTimeout(()=>URL.revokeObjectURL(url),1000)
     setMenu(null)
   }
-  const drawTool=['boundary','house','apartment'].includes(tool)
-  const actions:Partial<Record<Tool,string>>={boundary:'Click each corner of the redline, then finish to close it.',house:'Click frontage points in order. Houses extend to the right of the drawing direction.',apartment:'Click frontage points in order. The block extends to the right of the drawing direction.',move:'Drag a block to move it across the site.',rotate:'Drag a block left or right to rotate it about its first frontage point.',measure:'Click two points to measure the distance.',vertices:'Drag a vertex to edit the geometry.'}
+  const drawTool=tool==='boundary'||isBuildingTool(tool)
+  const frontageHint='Click frontage points in order. The block extends to the right of the drawing direction.'
+  const actions:Partial<Record<Tool,string>>={boundary:'Click each corner of the redline, then finish to close it.',house:'Click frontage points in order. Houses extend to the right of the drawing direction.',apartment:frontageHint,office:frontageHint,pbsa:frontageHint,move:'Drag a block to move it across the site.',rotate:'Drag a block left or right to rotate it about its first frontage point.',measure:'Click two points to measure the distance.',vertices:'Drag a vertex to edit the geometry.'}
   const s=selected?blockStats(selected,project):null
   const scale=canvas.current?geometry().s:4
   const scaleMetres=scale*20<65?50:scale*20>150?10:20
@@ -375,7 +380,7 @@ function App(){
     </header>
     <section className="toolbar" aria-label="Design tools">
       <div className="toolset">
-        {tools.map((t,i)=><div key={t.id} className={i===4?'tool-divider':''}><Button icon={t.icon} kind="tool" title={t.name} active={tool===t.id} onClick={()=>choose(t.id)}>{t.name}</Button></div>)}
+        {tools.map(t=><div key={t.id} className={t.id==='move'?'tool-divider':''}><Button icon={t.icon} kind="tool" title={t.name} active={tool===t.id} onClick={()=>choose(t.id)}>{t.name}</Button></div>)}
         <div className="tool-divider history"><Button icon="undo" kind="square" title="Undo" disabled={!history.past.length} onClick={undo}/><Button icon="redo" kind="square" title="Redo" disabled={!history.future.length} onClick={redo}/></div>
       </div>
       <div className="view-actions">
@@ -429,7 +434,8 @@ function App(){
           <Button icon="close" kind="square" title="Exit tool" onClick={()=>choose('select')}/>
         </div>}
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
-        <div className="map-legend"><span><i className="redline"/>Site boundary</span><span><i className="apartment"/>Apartments</span><span><i style={{background:project.colours['3B5P']}}/>Houses</span></div>
+        <div className="map-legend"><span><i className="redline"/>Site boundary</span>{(['apartment','house','office','pbsa'] as const).filter(type=>project.blocks.some(b=>b.type===type)).map(type=>
+          <span key={type}><i className={type} style={type==='house'?{background:project.colours['3B5P']}:undefined}/>{blockTypes[type].legend}</span>)}</div>
         {project.anchor&&<a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>}
         <div className="map-scale"><span>{scaleMetres} m</span><i style={{width:scaleMetres*scale}}/></div>
       </section>
@@ -448,7 +454,7 @@ function App(){
                 <input type="color" aria-label={t+' colour'} value={project.colours[t]} onChange={e=>commit({...project,colours:{...project.colours,[t]:e.target.value}})}/>
               </div>)}
             </div>}</div></div>
-          <p>Residential masterplan</p>
+          <p>Site masterplan</p>
           <div className="summary-grid" aria-live="polite">
             <div><span>Homes</span><strong>{format(totals.houses)}</strong></div>
             <div><span>Dwellings per hectare</span><strong>{totals.site ? format(totals.density,1) : '—'} <small>dph</small></strong></div>
@@ -459,8 +465,8 @@ function App(){
         <div className="block-list">
           <div className="section-label">BUILDINGS <span>{project.blocks.length}</span></div>
           {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');setSelection(b.id);setFloor(0);setEditFloor(0)}}>
-            <span className={'block-icon '+b.type}><Icon name={b.type==='house'?'house':'building'} size={16}/></span>
-            <span className="block-name"><strong>{b.name}</strong><small>{b.type==='house'?'House run':'Apartment block'}</small></span>
+            <span className={'block-icon '+b.type}><Icon name={b.type==='apartment'?'building':b.type} size={16}/></span>
+            <span className="block-name"><strong>{b.name}</strong><small>{blockTypes[b.type].label}</small></span>
             <span className="storeys">{floors(b)}F</span><Icon name="right" size={13}/>
           </button>)}
           {!project.blocks.length&&<p className="empty">Draw a frontage to add a building.</p>}
@@ -468,9 +474,9 @@ function App(){
         {selected&&s&&<Panel title={selected.name+' properties'} icon="settings">
           <div className="properties" key={selected.id}>
             <div className="property-grid">
-              {selected.type==='apartment'?<>
+              {selected.type!=='house'?<>
                 <NumberField label="Building depth" value={selected.depth} min={3} max={80} step={.1} update={depth=>updateBlock({...selected,depth})}/>
-                <NumberField label="Storeys" value={selected.floors} min={apartmentStoreys.min} max={apartmentStoreys.max} unit="" update={floors=>{setFloor(f=>Math.min(f,floors-1));setEditFloor(f=>Math.min(f,floors-1));updateBlock(resizeStoreys(selected,floors))}}/>
+                <NumberField label="Storeys" value={selected.floors} min={blockStoreys.min} max={blockStoreys.max} unit="" update={floors=>{setFloor(f=>Math.min(f,floors-1));setEditFloor(f=>Math.min(f,floors-1));updateBlock(resizeStoreys(selected,floors))}}/>
                 <NumberField label="Ground floor" value={selected.ground} min={2.5} max={12} step={.1} update={ground=>updateBlock({...selected,ground})}/>
                 <NumberField label="Upper floors" value={selected.upper} min={2.5} max={12} step={.1} update={upper=>updateBlock({...selected,upper})}/>
               </>:<>
@@ -480,14 +486,14 @@ function App(){
               <NumberField label="Ground level" value={selected.level} min={-30} max={60} step={.1} update={level=>updateBlock({...selected,level})}/>
               <div className="readout"><span>Frontage length</span><strong>{format(frontage(selected.line),1)} m</strong></div>
             </div>
-            {!plan&&tool==='select'&&selected.type==='apartment'&&selected.floors>1&&
+            {!plan&&tool==='select'&&selected.type!=='house'&&selected.floors>1&&
               <label className="field setback-picker"><span>Setback floor</span>
                 <select value={selectedFloor} onChange={e=>setEditFloor(Number(e.target.value))}>
                   {Array.from({length:selected.floors},(_,i)=><option key={i} value={i}>{i===0?'Ground':`Floor ${i}`}</option>)}
                 </select>
               </label>}
             <div className="property-actions">
-              {tool==='select'&&<span className="vertex-hint">{!plan&&selected.type==='apartment'?(selectedFloor?'Drag either blue end handle':'Select an upper floor for setbacks'):'Drag frontage handles to edit'}</span>}
+              {tool==='select'&&<span className="vertex-hint">{!plan&&selected.type!=='house'?(selectedFloor?'Drag either blue end handle':'Select an upper floor for setbacks'):'Drag frontage handles to edit'}</span>}
               <Button icon="copy" kind="square" title="Duplicate block" onClick={()=>duplicate(selected)}/>
               <Button icon="trash" kind="square" title="Delete block" onClick={remove}/>
             </div>

@@ -1,8 +1,15 @@
 export type Point = [number, number]
 export type HouseType = '3B5P' | '3B6P'
-export type Block = {id:string; name:string; type:'house'|'apartment'; line:Point[]; depth:number; floors:number; ground:number; upper:number; level:number; houseType:HouseType; setbacks?:Point[]}
+export type BlockType = 'house' | 'apartment' | 'office' | 'pbsa'
+export type Block = {id:string; name:string; type:BlockType; line:Point[]; depth:number; floors:number; ground:number; upper:number; level:number; houseType:HouseType; setbacks?:Point[]}
 export type Project = {anchor?:{lat:number;lon:number}; boundary:Point[]; blocks:Block[]; targets:Record<HouseType,number>; colours:Record<HouseType,string>}
-export const defaults = { frontage:4.5, external:0.6, party:0.3, houseFloors:3, houseHeight:3, apartmentGround:4.5, apartmentUpper:3, apartmentDepth:18 }
+export const defaults = { frontage:4.5, external:0.6, party:0.3, houseFloors:3, houseHeight:3 }
+export const blockTypes:Record<BlockType,{label:string;legend:string;depth:number;ground:number;upper:number;floors:number}>={
+  house:{label:'House run',legend:'Houses',depth:0,ground:defaults.houseHeight,upper:defaults.houseHeight,floors:defaults.houseFloors},
+  apartment:{label:'Apartment block',legend:'Apartments',depth:18,ground:4.5,upper:3,floors:4},
+  office:{label:'Office',legend:'Offices',depth:18,ground:4.5,upper:4,floors:4},
+  pbsa:{label:'Student accommodation (PBSA)',legend:'PBSA',depth:16,ground:4.5,upper:3,floors:4}
+}
 export const sample:Project = {
   boundary:[[-62,-29],[-9,-45],[59,-34],[78,4],[46,37],[-18,44],[-64,20]],
   blocks:[
@@ -19,7 +26,7 @@ export const frontage = (p:Point[]) => p.slice(1).reduce((sum,b,i)=>sum+length(p
 export const depthFor = (target:number) =>
   target / defaults.houseFloors / (defaults.frontage-defaults.party) + 2*defaults.external
 export const height = (b:Block) => b.type==='house' ? defaults.houseHeight*defaults.houseFloors : b.ground+(b.floors-1)*b.upper
-export const apartmentStoreys={min:1,max:30}
+export const blockStoreys={min:1,max:30}
 export const floors = (b:Block) => b.type==='house' ? defaults.houseFloors : b.floors
 export const levels = (b:Block) => Array.from({length:floors(b)},(_,i)=>b.type==='house'?(i+1)*defaults.houseHeight:b.ground+i*b.upper)
 const minus = (a:Point,b:Point):Point => [a[0]-b[0],a[1]-b[1]]
@@ -112,7 +119,7 @@ export function floorOutline(block:Block,outline:Point[],floor:number):Point[] {
   }
   return result
 }
-function validApartmentFloors(block:Block,outline:Point[]) {
+function validBlockFloors(block:Block,outline:Point[]) {
   return levels(block).every((_,floor)=>{
     const inset=endInset(block,floor)
     if(!inset[0]&&!inset[1])return true
@@ -125,7 +132,7 @@ function validApartmentFloors(block:Block,outline:Point[]) {
       const i=side?outline.length/2-1:0,j=outline.length-1-i
       const [dx,dy]=endDirection(block,side)
       return polygon.every(([x,y],k)=>k===i||k===j||(x-outline[i][0])*dx+(y-outline[i][1])*dy>dist+.05)
-    }) && apartmentInternalArea(polygon)!==null
+    }) && internalFloorArea(polygon)!==null
   })
 }
 export function resizeStoreys(block:Block,floors:number):Block {
@@ -133,7 +140,7 @@ export function resizeStoreys(block:Block,floors:number):Block {
   return block.setbacks ? {...block,floors,setbacks:block.setbacks.slice(0,floors)} : {...block,floors}
 }
 export function adjustSetback(block:Block,targets:Project['targets'],floor:number,end:number,delta:number,step:number):Block {
-  if(block.type!=='apartment'||floor<=0||floor>=block.floors)return block
+  if(block.type==='house'||floor<=0||floor>=block.floors)return block
   const original=endInset(block,floor)[end],minimum=endInset(block,floor-1)[end]
   const movement=Math.max(minimum-original,delta)
   if(Math.abs(movement)<1e-7)return block
@@ -145,18 +152,18 @@ export function adjustSetback(block:Block,targets:Project['targets'],floor:numbe
     return values
   })})
   const requested=apply(movement)
-  if(validApartmentFloors(requested,outline))return requested
+  if(validBlockFloors(requested,outline))return requested
   let low=0,high=1
   for(let i=0;i<22;i++){
     const mid=(low+high)/2
-    if(validApartmentFloors(apply(movement*mid),outline))low=mid
+    if(validBlockFloors(apply(movement*mid),outline))low=mid
     else high=mid
   }
   const accepted=movement*low
   const bounded=step?Math.sign(accepted)*Math.floor(Math.abs(accepted)/step)*step:accepted
   return Math.abs(bounded)>1e-6?apply(bounded):block
 }
-function apartmentInternalArea(poly:Point[]) {
+function internalFloorArea(poly:Point[]) {
   const winding=Math.sign(signedArea(poly))
   const thickness=winding*defaults.external
   const inner=poly.map((p,i):Point=>{
@@ -176,9 +183,9 @@ export function blockStats(b:Block,p:Project) {
   const units=b.type==='house'?houseUnits(b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01),p.targets[b.houseType]):null
   const outlines=units?units.map(unit=>unit.outline):footprints(b,p.targets)
   const footprint=outlines.reduce((sum,poly)=>sum+area(poly),0)
-  const floorPolys=b.type==='apartment'&&outlines[0]?levels(b).map((_,i)=>floorOutline(b,outlines[0],i)):[]
+  const floorPolys=b.type!=='house'&&outlines[0]?levels(b).map((_,i)=>floorOutline(b,outlines[0],i)):[]
   const gross=units?footprint*floors(b):floorPolys.reduce((sum,poly)=>sum+area(poly),0)
-  const internalAreas=floorPolys.map(apartmentInternalArea)
+  const internalAreas=floorPolys.map(internalFloorArea)
   const gia=units?units.reduce((sum,unit)=>sum+unit.internalArea,0)*floors(b):
     internalAreas.some(a=>a===null)?null:internalAreas.reduce<number>((sum,a)=>sum+(a??0),0)
   const outside=p.boundary.length>=3 && outlines.some(poly=>poly.some((a,i)=>
@@ -200,8 +207,8 @@ export function newBlock(project:Project,type:Block['type'],line:Point[]):Block 
   let index=0
   const label=(n:number):string=>(n>=26?label(Math.floor(n/26)-1):'')+String.fromCharCode(65+n%26)
   while(project.blocks.some(b=>b.name==='Block '+label(index))) index++
-  return {id:crypto.randomUUID(),name:'Block '+label(index),type,line,depth:defaults.apartmentDepth,
-    floors:type==='house'?3:4,ground:type==='house'?3:defaults.apartmentGround,upper:3,level:0,houseType:'3B5P'}
+  const {depth,floors,ground,upper}=blockTypes[type]
+  return {id:crypto.randomUUID(),name:'Block '+label(index),type,line,depth,floors,ground,upper,level:0,houseType:'3B5P'}
 }
 export function csv(p:Project) {
   const headings=['Block','Type','Storeys','Height (m)','Footprint (m²)','External floor area (m²)','Houses','House type','Modelled usable house area (m²)','Site area (m²)']
@@ -220,7 +227,7 @@ function overlapRectangles(a:Point[],b:Point[]) {
 }
 export function footprintSatisfies(block:Block,targets:Project['targets']) {
   const polygons=footprints(block,targets)
-  if(block.type==='apartment')return !!polygons[0]&&validPolygon(polygons[0])&&validApartmentFloors(block,polygons[0])
+  if(block.type!=='house')return !!polygons[0]&&validPolygon(polygons[0])&&validBlockFloors(block,polygons[0])
   return polygons.length>0 && polygons.every((poly,index)=>
     validPolygon(poly) && !polygons.slice(0,index).some(other=>overlapRectangles(poly,other))
   )
