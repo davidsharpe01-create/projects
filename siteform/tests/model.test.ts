@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, length, newBlock, sample, validPolygon } from '../src/model.ts'
+import { adjustSetback, endInset, floorOutline, resizeStoreys, area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, length, newBlock, sample, validPolygon } from '../src/model.ts'
 import { geographicPoint, mapFrame } from '../src/basemap.ts'
 const near=(a:number,b:number)=>assert.ok(Math.abs(a-b)<1e-7,`${a} ≠ ${b}`)
 
@@ -84,4 +84,34 @@ test('indicative GIA deducts apartment external walls and updates with storeys',
   near(blockStats({...block,floors:3},project).gia!,floorArea*3)
   const house=newBlock(sample,'house',[[0,0],[4.5,0]])
   near(blockStats(house,sample).gia!,99)
+})
+
+test('end setbacks reduce only the selected floor and above, and update floor areas',()=>{
+  const block={...newBlock(sample,'apartment',[[0,0],[50,0]]),floors:4}
+  const start=adjustSetback(block,sample.targets,2,0,8,.5)
+  const both=adjustSetback(start,sample.targets,2,1,5,.5)
+  const upper=adjustSetback(both,sample.targets,3,1,4,.5)
+  assert.deepEqual([0,1,2,3].map(i=>endInset(upper,i)),[[0,0],[0,0],[8,5],[8,9]])
+  const outline=footprints(block,sample.targets)[0]
+  assert.deepEqual([0,1,2,3].map(i=>area(floorOutline(upper,outline,i))),[900,900,666,594])
+  near(blockStats(upper,sample).gross,3060)
+  near(blockStats(upper,sample).gia!,(50+50+37+33-4*1.2)*16.8)
+  const restored=adjustSetback(upper,sample.targets,3,1,-99,.5)
+  assert.deepEqual(endInset(restored,3),[8,5])
+  const limited=adjustSetback(upper,sample.targets,2,0,100,.5)
+  assert.ok(footprintSatisfies(limited,sample.targets))
+  assert.ok(endInset(limited,3)[0]+endInset(limited,3)[1]<50)
+  assert.deepEqual(endInset(resizeStoreys(resizeStoreys(upper,3),4),3),[8,5])
+})
+
+test('ends on a bent frontage can be shortened while retaining the corner',()=>{
+  const block=newBlock(sample,'apartment',[[0,0],[40,0],[66,-12]])
+  const start=adjustSetback(block,sample.targets,1,0,6,.5)
+  const both=adjustSetback(start,sample.targets,1,1,5,.5)
+  const outline=footprints(block,sample.targets)[0]
+  const upper=floorOutline(both,outline,1)
+  assert.deepEqual(endInset(both,1),[6,5])
+  assert.deepEqual(upper[1],outline[1])
+  near(area(outline)-area(upper),11*block.depth)
+  assert.ok(footprintSatisfies(both,sample.targets))
 })

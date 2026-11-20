@@ -158,3 +158,5 @@ input[type=checkbox],input[type=range]{accent-color:#34745e}
 .attribution{position:absolute;right:8px;bottom:1px;background:#fbfcf7e8;padding:1px 4px;border-radius:3px;font-size:9px;text-decoration:none}
 
 .vertex-hint{margin-right:auto;color:#657970;font-size:11px}
+
+.setback-picker{margin-top:10px}

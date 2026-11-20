@@ -1,6 +1,6 @@
 export type Point = [number, number]
 export type HouseType = '3B5P' | '3B6P'
-export type Block = {id:string; name:string; type:'house'|'apartment'; line:Point[]; depth:number; floors:number; ground:number; upper:number; level:number; houseType:HouseType}
+export type Block = {id:string; name:string; type:'house'|'apartment'; line:Point[]; depth:number; floors:number; ground:number; upper:number; level:number; houseType:HouseType; setbacks?:Point[]}
 export type Project = {anchor?:{lat:number;lon:number}; boundary:Point[]; blocks:Block[]; targets:Record<HouseType,number>; colours:Record<HouseType,string>}
 export const defaults = { frontage:4.5, external:0.6, party:0.3, houseFloors:3, houseHeight:3, apartmentGround:4.5, apartmentUpper:3, apartmentDepth:18 }
 export const sample:Project = {
@@ -90,6 +90,74 @@ export function footprints(b:Block,targets:Project['targets']):Point[][] {
   })
   return [[...line,...back.reverse()]]
 }
+export function endInset(block:Block,floor:number):Point {
+  return floor>0?(block.setbacks?.[Math.min(floor,block.setbacks.length-1)]??[0,0]):[0,0]
+}
+export function endDirection(block:Block,end:number):Point {
+  const line=end?[...block.line].reverse():block.line
+  const origin=line[0]
+  const next=line.find(point=>length(point,origin)>.01)
+  if(!next)return [0,0]
+  const [x,y]=minus(next,origin),size=Math.hypot(x,y)
+  return [x/size,y/size]
+}
+export function floorOutline(block:Block,outline:Point[],floor:number):Point[] {
+  const [start,end]=endInset(block,floor)
+  if(!start&&!end)return outline
+  const result=[...outline]
+  for(const [side,dist] of [start,end].entries()){
+    if(!dist)continue
+    const i=side?outline.length/2-1:0,j=outline.length-1-i
+    const [dx,dy]=endDirection(block,side)
+    result[i]=[outline[i][0]+dist*dx,outline[i][1]+dist*dy]
+    result[j]=[outline[j][0]+dist*dx,outline[j][1]+dist*dy]
+  }
+  return result
+}
+function validApartmentFloors(block:Block,outline:Point[]) {
+  return levels(block).every((_,floor)=>{
+    const inset=endInset(block,floor)
+    if(!inset[0]&&!inset[1])return true
+    const below=endInset(block,floor-1)
+    const polygon=floorOutline(block,outline,floor)
+    if(!validPolygon(polygon)||inset.some((dist,i)=>dist<below[i]))return false
+    // Each cut must stop before it reaches another corner or the opposite end.
+    return inset.every((dist,side)=>{
+      if(!dist)return true
+      const i=side?outline.length/2-1:0,j=outline.length-1-i
+      const [dx,dy]=endDirection(block,side)
+      return polygon.every(([x,y],k)=>k===i||k===j||(x-outline[i][0])*dx+(y-outline[i][1])*dy>dist+.05)
+    }) && apartmentInternalArea(polygon)!==null
+  })
+}
+export function resizeStoreys(block:Block,floors:number):Block {
+  if(block.floors===floors)return block
+  return block.setbacks ? {...block,floors,setbacks:block.setbacks.slice(0,floors)} : {...block,floors}
+}
+export function adjustSetback(block:Block,targets:Project['targets'],floor:number,end:number,delta:number,step:number):Block {
+  if(block.type!=='apartment'||floor<=0||floor>=block.floors)return block
+  const original=endInset(block,floor)[end],minimum=endInset(block,floor-1)[end]
+  const movement=Math.max(minimum-original,delta)
+  if(Math.abs(movement)<1e-7)return block
+  const outline=footprints(block,targets)[0]
+  if(!outline)return block
+  const apply=(offset:number):Block=>({...block,setbacks:levels(block).map((_,i)=>{
+    const values=[...endInset(block,i)] as Point
+    if(i>=floor)values[end]+=offset
+    return values
+  })})
+  const requested=apply(movement)
+  if(validApartmentFloors(requested,outline))return requested
+  let low=0,high=1
+  for(let i=0;i<22;i++){
+    const mid=(low+high)/2
+    if(validApartmentFloors(apply(movement*mid),outline))low=mid
+    else high=mid
+  }
+  const accepted=movement*low
+  const bounded=step?Math.sign(accepted)*Math.floor(Math.abs(accepted)/step)*step:accepted
+  return Math.abs(bounded)>1e-6?apply(bounded):block
+}
 function apartmentInternalArea(poly:Point[]) {
   const winding=Math.sign(signedArea(poly))
   const thickness=winding*defaults.external
@@ -109,13 +177,17 @@ function apartmentInternalArea(poly:Point[]) {
 export function blockStats(b:Block,p:Project) {
   const units=b.type==='house'?houseUnits(b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01),p.targets[b.houseType]):null
   const outlines=units?units.map(unit=>unit.outline):footprints(b,p.targets)
-  const internal=units?units.reduce((sum,unit)=>sum+unit.internalArea,0):outlines.length?apartmentInternalArea(outlines[0]):null
   const footprint=outlines.reduce((sum,poly)=>sum+area(poly),0)
+  const floorPolys=b.type==='apartment'&&outlines[0]?levels(b).map((_,i)=>floorOutline(b,outlines[0],i)):[]
+  const gross=units?footprint*floors(b):floorPolys.reduce((sum,poly)=>sum+area(poly),0)
+  const internalAreas=floorPolys.map(apartmentInternalArea)
+  const gia=units?units.reduce((sum,unit)=>sum+unit.internalArea,0)*floors(b):
+    internalAreas.some(a=>a===null)?null:internalAreas.reduce<number>((sum,a)=>sum+(a??0),0)
   const outside=p.boundary.length>=3 && outlines.some(poly=>poly.some((a,i)=>
     !inside(a,p.boundary) || p.boundary.some((c,j)=>intersects(a,poly[(i+1)%poly.length],c,p.boundary[(j+1)%p.boundary.length]))
   ))
   const houses=b.type==='house'?outlines.length:0
-  return {footprint, gross:footprint*floors(b), gia:internal===null?null:internal*floors(b), houses, usable:houses*p.targets[b.houseType], outside}
+  return {footprint, gross, gia, houses, usable:houses*p.targets[b.houseType], outside}
 }
 export function development(p:Project) {
   const site=area(p.boundary)
@@ -149,6 +221,7 @@ function overlapRectangles(a:Point[],b:Point[]) {
 }
 export function footprintSatisfies(block:Block,targets:Project['targets']) {
   const polygons=footprints(block,targets)
+  if(block.type==='apartment')return !!polygons[0]&&validPolygon(polygons[0])&&validApartmentFloors(block,polygons[0])
   return polygons.length>0 && polygons.every((poly,index)=>
     validPolygon(poly) && !polygons.slice(0,index).some(other=>overlapRectangles(poly,other))
   )

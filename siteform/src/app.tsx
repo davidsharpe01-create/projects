@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
-import { sample, apartmentStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
+import { sample, apartmentStoreys, adjustSetback, endDirection, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
 import './style.css'
 
@@ -23,7 +23,7 @@ function load():Project {
 const format=(n:number,places=0)=>n.toLocaleString('en-GB',{maximumFractionDigits:places,minimumFractionDigits:places})
 const pointDiff=(p:Point,q:Point):Point=>[p[0]-q[0],p[1]-q[1]]
 const defaultOption='Base option'
-type Drag={screen:Point;point:Point;camera:Camera;project:Project;id:string|null;action:'orbit'|'pan'|'move'|'rotate'|'vertices'|'height'|'draw';vertex:number;changed:boolean;last:Point;navigation:boolean}
+type Drag={screen:Point;point:Point;camera:Camera;project:Project;id:string|null;action:'orbit'|'pan'|'move'|'rotate'|'vertices'|'height'|'setback'|'draw';vertex:number;changed:boolean;last:Point;navigation:boolean;floor:number}
 
 function NumberField({label,value,update,min,max,step=1,unit='m'}:{label:string;value:number;update:(n:number)=>void;min:number;max:number;step?:number;unit?:string}){
   const [draft,change]=useState(String(value))
@@ -49,6 +49,8 @@ function App(){
   const [tool,setTool]=useState<Tool>('select')
   const [plan,setPlan]=useState(false)
   const [floor,setFloor]=useState(0)
+  const [editFloor,setEditFloor]=useState(0)
+  const selectedFloor=Math.min(editFloor,Math.max(0,(selected?.floors??1)-1))
   const [camera,setCamera]=useState<Camera>(home)
   const [layers,setLayers]=useState(initialLayers)
   const [opacity,setOpacity]=useState(1)
@@ -63,7 +65,7 @@ function App(){
   const [snap,setSnap]=useState(true)
   const [size,setSize]=useState(0)
   const canvas=useRef<HTMLCanvasElement>(null)
-  const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,handles:[],heightAt:()=>false})
+  const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
   const totals=development(project)
   const warnings=project.blocks.flatMap(b=>blockStats(b,project).outside?[b.name+' extends beyond the site boundary.']:[])
@@ -79,8 +81,8 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),project:preview??project,selected:selection,draft,pointer,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',refresh:()=>setSize(n=>n+1)})
-  },[camera,plan,floor,project,preview,selection,draft,pointer,size,layers,opacity,tool])
+    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',refresh:()=>setSize(n=>n+1)})
+  },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,size,layers,opacity,tool])
   function commit(next:Project){
     setHistory(h=>JSON.stringify(next)===JSON.stringify(h.current)?h:{past:[...h.past.slice(-49),h.current],current:next,future:[]})
   }
@@ -141,14 +143,16 @@ function App(){
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
     else if(tool==='select'||tool==='vertices'){
       let distance=12
-      scene.current.handles.forEach((handle,i)=>{
+      const {handles,setbackHandles}=scene.current
+      const grips=setbackHandles.length?setbackHandles:handles
+      grips.forEach((handle,i)=>{
         const next=length(screen,handle)
         if(next<distance){distance=next;vertex=i}
       })
-      action=vertex>=0?'vertices':scene.current.heightAt(screen)?'height':'pan'
+      action=vertex>=0?(setbackHandles.length?'setback':'vertices'):scene.current.heightAt(screen)?'height':'pan'
       if(tool==='vertices')id=null
     }
-    drag.current={screen,point,camera,project,id,action,vertex,changed:false,last:screen,navigation:e.button===1}
+    drag.current={screen,point,camera,project,id,action,vertex,changed:false,last:screen,navigation:e.button===1,floor:selectedFloor}
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   function move(e:PointerEvent<HTMLCanvasElement>){
@@ -179,8 +183,23 @@ function App(){
         if(b.id!==d.id)return b
         const delta=Math.round(-offset[1]/(pixelsPerMetre*b.upper))
         const floors=Math.min(apartmentStoreys.max,Math.max(apartmentStoreys.min,b.floors+delta))
-        return floors===b.floors?b:{...b,floors}
+        return resizeStoreys(b,floors)
       })})
+      return
+    }
+    if(d.action==='setback'){
+      const block=d.project.blocks.find(b=>b.id===d.id)
+      if(!block)return
+      const {project:toScreen}=geometry(d.camera)
+      const direction=endDirection(block,d.vertex)
+      const [x,y]=pointDiff(toScreen(direction),toScreen([0,0]))
+      const squared=x*x+y*y
+      if(squared<.0625)return
+      const movement=(offset[0]*x+offset[1]*y)/squared
+      const step=snap?.5:0
+      const delta=step?Math.round(movement/step)*step:movement
+      const updated=adjustSetback(block,d.project.targets,d.floor,d.vertex,delta,step)
+      setPreview({...d.project,blocks:d.project.blocks.map(b=>b===block?updated:b)})
       return
     }
     if(d.action==='orbit'){
@@ -226,9 +245,14 @@ function App(){
       return
     }
     if(e.button!==0||d.navigation)return
-    if(d.action==='vertices'||d.action==='height')return
+    if(d.action==='vertices'||d.action==='setback')return
+    if(d.action==='height'&&!scene.current.pick(d.screen))return
     if(tool==='vertices'){choose('select');setSelection(null);return}
-    if(tool==='select'){setSelection(scene.current.pick(d.screen));return}
+    if(tool==='select'){
+      setSelection(scene.current.pick(d.screen))
+      setEditFloor(plan?0:scene.current.pickFloor(d.screen))
+      return
+    }
     if(['boundary','house','apartment','measure'].includes(tool)){
       if(tool==='measure'&&draft.length===2){setDraft([d.point]);return}
       if(draft.length&&length(draft.at(-1)!,d.point)<.05)return
@@ -388,7 +412,7 @@ function App(){
         </div>
         <div className="block-list">
           <div className="section-label">BUILDINGS <span>{project.blocks.length}</span></div>
-          {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');setSelection(b.id);setFloor(0)}}>
+          {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');setSelection(b.id);setFloor(0);setEditFloor(0)}}>
             <span className={'block-icon '+b.type}><Icon name={b.type==='house'?'house':'building'} size={16}/></span>
             <span className="block-name"><strong>{b.name}</strong><small>{b.type==='house'?'House run':'Apartment block'}</small></span>
             <span className="storeys">{floors(b)}F</span><Icon name="right" size={13}/>
@@ -400,7 +424,7 @@ function App(){
             <div className="property-grid">
               {selected.type==='apartment'?<>
                 <NumberField label="Building depth" value={selected.depth} min={3} max={80} step={.1} update={depth=>updateBlock({...selected,depth})}/>
-                <NumberField label="Storeys" value={selected.floors} min={apartmentStoreys.min} max={apartmentStoreys.max} unit="" update={floors=>{setFloor(f=>Math.min(f,floors-1));updateBlock({...selected,floors})}}/>
+                <NumberField label="Storeys" value={selected.floors} min={apartmentStoreys.min} max={apartmentStoreys.max} unit="" update={floors=>{setFloor(f=>Math.min(f,floors-1));setEditFloor(f=>Math.min(f,floors-1));updateBlock(resizeStoreys(selected,floors))}}/>
                 <NumberField label="Ground floor" value={selected.ground} min={2.5} max={12} step={.1} update={ground=>updateBlock({...selected,ground})}/>
                 <NumberField label="Upper floors" value={selected.upper} min={2.5} max={12} step={.1} update={upper=>updateBlock({...selected,upper})}/>
               </>:<>
@@ -410,8 +434,14 @@ function App(){
               <NumberField label="Ground level" value={selected.level} min={-30} max={60} step={.1} update={level=>updateBlock({...selected,level})}/>
               <div className="readout"><span>Frontage length</span><strong>{format(frontage(selected.line),1)} m</strong></div>
             </div>
+            {!plan&&tool==='select'&&selected.type==='apartment'&&selected.floors>1&&
+              <label className="field setback-picker"><span>Setback floor</span>
+                <select value={selectedFloor} onChange={e=>setEditFloor(Number(e.target.value))}>
+                  {Array.from({length:selected.floors},(_,i)=><option key={i} value={i}>{i===0?'Ground':`Floor ${i}`}</option>)}
+                </select>
+              </label>}
             <div className="property-actions">
-              {tool==='select'&&<span className="vertex-hint">{!plan&&selected.type==='apartment'?'Drag the roof to change height':'Drag frontage handles to edit'}</span>}
+              {tool==='select'&&<span className="vertex-hint">{!plan&&selected.type==='apartment'?(selectedFloor?'Drag either blue end handle':'Select an upper floor for setbacks'):'Drag frontage handles to edit'}</span>}
               <Button icon="copy" kind="square" title="Duplicate block" onClick={()=>duplicate(selected)}/>
               <Button icon="trash" kind="square" title="Delete block" onClick={remove}/>
             </div>

@@ -1,6 +1,6 @@
 import { paintMap } from './basemap'
-import { depthPlane, foregroundShape, pickSurface, type Surface } from './depth'
-import { footprints, levels, height, floors, inside, type Point, type Project } from './model'
+import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
+import { footprints, levels, height, floors, floorOutline, endInset, inside, type Point, type Project } from './model'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
 export type Layers = {context:boolean; trees:boolean; grid:boolean; labels:boolean}
@@ -57,14 +57,14 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
   return {project,invert,s,depth}
 }
-type Scene = {camera:Camera;plan:boolean;floor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; refresh:()=>void}
+type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; refresh:()=>void}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
   if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){
     canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)
   }
-  const {camera,plan,project,selected,draft,pointer,layers,opacity,editFrontage,editBoundary,floor}=scene
+  const {camera,plan,project,selected,draft,pointer,layers,opacity,editFrontage,editBoundary,floor,editFloor}=scene
   const {project:xy,invert,s,depth}=projection(w,h,camera,plan)
   ctx.setTransform(dpr,0,0,dpr,0,0)
   ctx.fillStyle='#d7dcd0';ctx.fillRect(0,0,w,h)
@@ -121,7 +121,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const green={roof:'#a6c6b8',walls:['#7b9f90','#648e7e','#759c8b','#94b3a5'],line:'#476f61',floor:'#e2eee7'}
   const active={roof:'#b7d7ca',walls:['#81ab9b','#568675','#6e9b8c','#9bc1b3'],line:'#286957',floor:'#d5e7df'}
   const house={roof:'#d8b284',walls:['#b28b61','#a67d55','#b59069','#c6a27a'],line:'#8f6f50',floor:'#e4c8a8'}
-  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0)=>{
+  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true)=>{
     const top=poly.map(p=>xy(p,z))
     if(!plan){
       const winding=poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+p[0]*q[1]-p[1]*q[0]},0)
@@ -130,15 +130,17 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
         if((b[0]-a[0])*Math.sign(winding)>=-1e-7)return
         const high=xy(p,z)
         const shape=[a,b,xy(q,z),high]
-        addSurface({id,shape,depth:depthPlane(a,b,high,depth(p,base),depth(q,base),depth(p,z))},()=>{
+        addSurface({id,floor:storey,shape,depth:depthPlane(a,b,high,depth(p,base),depth(q,base),depth(p,z))},()=>{
           path(shape,material.walls[i%4],material.line,.75)
+          if(storey!==undefined)path([high,xy(q,z)],undefined,material.floor,.85,false)
           storeys.slice(0,-1).forEach(level=>path([xy(p,base+level),xy(q,base+level)],undefined,material.floor,.85,false))
         })
       })
     }
+    if(!cap)return
     // A roof is horizontal, so depth across it depends only on screen height.
     const roofDepth=plan?()=>0:([,y]:Point)=>depth(poly[0],z)+(y-top[0][1])*Math.sqrt(1-camera.tilt**2)/(s*camera.tilt)
-    addSurface({id,shape:top,depth:roofDepth,roof:true},()=>path(top,material.roof,material.line,id===selected?1.75:.8))
+    addSurface({id,shape:top,depth:roofDepth,roof:topRoof,floor:storey},()=>path(top,material.roof,material.line,id===selected?1.75:.8))
   }
   if(layers.context&&!project.anchor) buildings.forEach(({poly,z})=>face(poly,z,contextMaterial,[]))
   if(layers.trees&&!project.anchor) visibleTrees.filter(({p})=>!inside(p,boundary)).forEach(({p,r,h,c})=>{
@@ -165,11 +167,31 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   project.blocks.forEach(b=>{
     if(plan && floor>=levels(b).length)return
     const polys=footprints(b,project.targets),z=plan?0:height(b)+b.level
-    ctx.globalAlpha=1
     const roof=project.colours[b.houseType]
     const material=b.type==='house'?{...house,roof,line:b.id===selected?'#286957':house.line}:b.id===selected?active:green
-    const group=polys.flat()
-    polys.forEach(poly=>face(poly,z,material,levels(b),b.id,plan?0:b.level))
+    let group=polys.flat()
+    if(b.type==='apartment'&&polys[0]){
+      const heights=levels(b)
+      if(plan){
+        const poly=floorOutline(b,polys[0],floor)
+        face(poly,0,material,[],b.id)
+        group=poly
+      }else{
+        heights.forEach((top,i)=>{
+          const poly=floorOutline(b,polys[0],i)
+          const last=i===heights.length-1
+          const here=endInset(b,i),above=endInset(b,i+1)
+          const cap=last||here.some((dist,j)=>dist!==above[j])
+          const colour=i>0&&i===editFloor&&b.id===selected&&editFrontage
+            ?{...material,walls:['#7fa9c0','#5b889f','#6b98ae','#91b4c6'],floor:'#dceaf0'}
+            :material
+          face(poly,b.level+top,colour,[],b.id,b.level+(heights[i-1]??0),i,cap,last)
+          if(last)group=poly
+        })
+      }
+    }else{
+      polys.forEach(poly=>face(poly,z,material,levels(b),b.id,plan?0:b.level))
+    }
     if(group.length&&(b.id===selected||(plan&&layers.labels))){
       const center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)
       const resize=!plan&&editFrontage&&b.id===selected&&b.type==='apartment'
@@ -210,7 +232,21 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.fillStyle=chosen?'#fff':'#35574c';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,x,y+.5)
   })
   const block=editFrontage?project.blocks.find(b=>b.id===selected && (!plan||floor<floors(b))):undefined
-  const handles=block
+  const setbackHandles:Point[]=[]
+  if(block?.type==='apartment'&&!plan&&editFloor>0&&editFloor<block.floors){
+    const outline=footprints(block,project.targets)[0]
+    if(outline){
+      const poly=floorOutline(block,outline,editFloor)
+      const heights=levels(block)
+      const elevation=block.level+(heights[editFloor-1]+heights[editFloor])/2
+      const lastFront=poly.length/2-1
+      const front=poly.slice(0,lastFront+1).map(p=>xy(p,elevation))
+      path(front,undefined,'#215a7b',2,false)
+      setbackHandles.push(front[0],front[lastFront])
+      setbackHandles.forEach(p=>dot(p,'#215a7b',6.5))
+    }
+  }
+  const handles=block&&(!(plan?floor:editFloor)||block.type!=='apartment')
     ?block.line.map(p=>xy(p,plan?0:block.level))
     :editBoundary?boundary.map(p=>xy(p)):[]
   if(block)path(handles,undefined,'#176f59',2,false)
@@ -225,5 +261,6 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.strokeStyle=colour;ctx.lineWidth=2;ctx.stroke()
   }
   return {pick:(point:Point)=>pickSurface(surfaces,point),handles,
+    setbackHandles,pickFloor:(point:Point)=>visibleSurface(surfaces,point)?.floor??0,
     heightAt:(point:Point)=>heightHandle.length>0&&(inside(point,heightHandle)||pickSurface(surfaces,point,true)===selected)}
 }
