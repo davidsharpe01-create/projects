@@ -10,15 +10,6 @@ export const blockTypes:Record<BlockType,{label:string;legend:string;depth:numbe
   office:{label:'Office',legend:'Offices',depth:18,ground:4.5,upper:4,floors:4},
   pbsa:{label:'Student accommodation (PBSA)',legend:'PBSA',depth:16,ground:4.5,upper:3,floors:4}
 }
-export const sample:Project = {
-  boundary:[[-62,-29],[-9,-45],[59,-34],[78,4],[46,37],[-18,44],[-64,20]],
-  blocks:[
-    {id:'a',name:'Block A',type:'apartment',line:[[-45,-16],[4,-28]],depth:18,floors:5,ground:4.5,upper:3,level:0,houseType:'3B5P'},
-    {id:'b',name:'Block B',type:'apartment',line:[[25,-23],[55,-12]],depth:18,floors:4,ground:4.5,upper:3,level:0,houseType:'3B5P'},
-    {id:'c',name:'Block C',type:'house',line:[[-34,17],[13,23]],depth:10,floors:3,ground:3,upper:3,level:0,houseType:'3B5P'}
-  ],
-  targets:{'3B5P':99,'3B6P':108}, colours:{'3B5P':'#d8b284','3B6P':'#cf937f'}
-}
 export const length = (a:Point,b:Point) => Math.hypot(b[0]-a[0],b[1]-a[1])
 const signedArea = (p:Point[]) => p.reduce((sum,a,i)=>{const b=p[(i+1)%p.length];return sum+a[0]*b[1]-a[1]*b[0]},0)/2
 export const area = (p:Point[]) => Math.abs(signedArea(p))

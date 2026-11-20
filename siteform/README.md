@@ -1,6 +1,6 @@
 # Siteform
 
-Siteform is a browser-based residential masterplanning review app. The initial project includes a sample site, two apartment envelopes and one house run. It stores edits in the browser.
+Siteform is a browser-based residential masterplanning review app. A new project starts empty on the street map at 321 Bradford Street, Birmingham B5 6ET. It stores edits in the browser.
 
 ## Run locally
 
@@ -13,7 +13,7 @@ npm run preview
 
 Open http://localhost:4173. Use Node.js 24 or newer.
 
-Click the site location badge to enter latitude and longitude and load an OpenStreetMap basemap. The original context is illustrative. Model coordinates are in local metres, with east and south positive. The map transform uses a local approximation at the selected origin.
+Click the site location badge to enter latitude and longitude and load an OpenStreetMap basemap. Model coordinates are in local metres, with east and south positive. The map transform uses a local approximation at the selected origin.
 
 Click each boundary corner or frontage vertex in order and press **Finish**. Draw frontages so the building projects to the right of the drawing direction. Click a building to inspect its properties and drag its frontage handles in either view. In 3D, drag the roof of a selected apartment block up or down to add or remove storeys. Click an upper floor in 3D or choose it under **Setback floor**, then drag either blue frontage end. The selected floor and floors above shorten together. Click empty space to finish editing. Choose **Boundary → Edit boundary** to drag the redline vertices. Middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold both middle and left buttons to pan while using another tool, or middle-drag in Plan. Scroll to zoom around the cursor and use **Fit model** to frame the site and blocks. Use **Export** for CSV or a JSON copy.
 

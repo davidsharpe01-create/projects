@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { adjustSetback, endInset, floorOutline, resizeStoreys, area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, length, newBlock, sample, validPolygon } from '../src/model.ts'
+import { adjustSetback, endInset, floorOutline, resizeStoreys, area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, length, newBlock, validPolygon } from '../src/model.ts'
+import { legacySample as sample, blankProject, restoreProject } from '../src/project.ts'
 import { geographicPoint, mapFrame } from '../src/basemap.ts'
 const near=(a:number,b:number)=>assert.ok(Math.abs(a-b)<1e-7,`${a} ≠ ${b}`)
 
@@ -126,4 +127,18 @@ test('office and PBSA use their own depths and contribute GIA without adding hom
   near(blockStats(pbsa,sample).gia!,(50-1.2)*(16-1.2)*pbsa.floors)
   assert.equal(development({...sample,blocks:[office,pbsa]}).houses,0)
   assert.deepEqual(endInset(adjustSetback(pbsa,sample.targets,1,0,5,.5),1),[5,0])
+})
+
+test('new projects and untouched legacy demos start empty at the Bradford Street postcode',()=>{
+  const expected=blankProject()
+  assert.deepEqual(expected.anchor,{lat:52.4749,lon:-1.889077})
+  assert.deepEqual(expected.blocks,[])
+  assert.deepEqual(expected.boundary,[])
+  assert.deepEqual(restoreProject(null),expected)
+  assert.deepEqual(restoreProject(JSON.stringify(sample)),expected)
+  const changed=structuredClone(sample)
+  changed.blocks[0].floors++
+  assert.deepEqual(restoreProject(JSON.stringify(changed)),changed)
+  const located={...changed,anchor:{lat:51.5,lon:-.12}}
+  assert.deepEqual(restoreProject(JSON.stringify(located)),located)
 })

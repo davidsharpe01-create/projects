@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
-import { sample, blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type BlockType, type Point, type Project } from './model'
+import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type BlockType, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
+import {blankProject,defaultAddress,isDefaultAddress,restoreProject} from './project'
 import './style.css'
 
 type Tool=BlockType|'select'|'boundary'|'move'|'rotate'|'measure'|'vertices'
@@ -19,11 +20,8 @@ const tools:{id:Tool;icon:string;name:string}[]=[
 ]
 const key='siteform.project.v1'
 function load():Project {
-  try {
-    const value=JSON.parse(localStorage.getItem(key)||'null')
-    if(value && Array.isArray(value.blocks) && Array.isArray(value.boundary) && value.targets && value.colours) return value
-  } catch {}
-  return sample
+  try{return restoreProject(localStorage.getItem(key))}
+  catch{return blankProject()}
 }
 const format=(n:number,places=0)=>n.toLocaleString('en-GB',{maximumFractionDigits:places,minimumFractionDigits:places})
 const pointDiff=(p:Point,q:Point):Point=>[p[0]-q[0],p[1]-q[1]]
@@ -49,6 +47,8 @@ function Panel({title,icon,children,count,initial=true}:{title:string;icon:strin
 function App(){
   const [history,setHistory]=useState(()=>({past:[] as Project[],current:load(),future:[] as Project[]}))
   const project=history.current
+  const atDefault=isDefaultAddress(project.anchor)
+  const locationTitle=atDefault?defaultAddress.street:project.anchor?'Site location':'Unplaced project'
   const [selection,setSelection]=useState<string|null>(()=>project.blocks[0]?.id??null)
   const selected=project.blocks.find(b=>b.id===selection)
   const [tool,setTool]=useState<Tool>('select')
@@ -63,8 +63,8 @@ function App(){
   const [pointer,setPointer]=useState<Point|null>(null)
   const [preview,setPreview]=useState<Project|null>(null)
   const [menu,setMenu]=useState<'layers'|'settings'|'export'|'help'|'location'|null>(null)
-  const [latitude,setLatitude]=useState(String(project.anchor?.lat??52.48))
-  const [longitude,setLongitude]=useState(String(project.anchor?.lon??-1.90))
+  const [latitude,setLatitude]=useState(String(project.anchor?.lat??defaultAddress.anchor.lat))
+  const [longitude,setLongitude]=useState(String(project.anchor?.lon??defaultAddress.anchor.lon))
   const [notice,setNotice]=useState('')
   const [saved,setSaved]=useState(true)
   const [snap,setSnap]=useState(true)
@@ -357,7 +357,7 @@ function App(){
   function download(kind:'csv'|'json'){
     const blob=new Blob([kind==='csv'?csv(project):JSON.stringify(project,null,2)],{type:kind==='csv'?'text/csv;charset=utf-8':'application/json'})
     const url=URL.createObjectURL(blob),a=document.createElement('a')
-    a.href=url;a.download='riverside-quarter.'+kind;a.click()
+    a.href=url;a.download='masterplan.'+kind;a.click()
     setTimeout(()=>URL.revokeObjectURL(url),1000)
     setMenu(null)
   }
@@ -370,7 +370,7 @@ function App(){
   const shownFloor=Math.min(floor,storyCount-1)
   return <div className="app">
     <header className="topbar">
-      <div className="breadcrumbs"><span>Projects</span><Icon name="right" size={13}/><strong>Riverside Quarter</strong></div>
+      <div className="breadcrumbs"><span>Projects</span><Icon name="right" size={13}/><strong>{locationTitle}</strong></div>
       <div className="top-actions">
         <span className="save"><Icon name={saved?'check':'warning'} size={15}/>{saved?'Saved locally':'Save unavailable'}</span>
         <div className="menu-anchor"><Button icon="download" kind="export" onClick={()=>setOption('export')}>Export<Icon name="chevron" size={13}/></Button>
@@ -389,7 +389,7 @@ function App(){
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['context','Sample context'],['trees','Context trees'],['grid','10 m grid'],['labels','Plan labels']] as const).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>setLayers({...layers,[id]:e.target.checked})}/>{label}</label>)}
+            {([['map','Street map'],['grid','10 m grid'],['labels','Plan labels']] as const).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>setLayers({...layers,[id]:e.target.checked})}/>{label}</label>)}
             <label className="range">Massing opacity<input aria-label="Massing opacity" type="range" min=".25" max="1" step=".05" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/></label>
           </div>}
         </div>
@@ -403,7 +403,7 @@ function App(){
         <div className="site-location">
           <button className="site-title" type="button" aria-expanded={menu==='location'} onClick={()=>setOption('location')}>
             <span className="map-pin"><Icon name="location" size={16}/></span>
-            <span><strong>{project.anchor?'Site location':'Riverside Quarter'}</strong><small>{project.anchor?project.anchor.lat.toFixed(5)+'°, '+project.anchor.lon.toFixed(5)+'°':'Sample site · UK'}</small></span>
+            <span><strong>{locationTitle}</strong><small>{atDefault?defaultAddress.locality:project.anchor?project.anchor.lat.toFixed(5)+'°, '+project.anchor.lon.toFixed(5)+'°':'Set a map location'}</small></span>
             <Icon name="chevron" size={13}/>
           </button>
           {menu==='location'&&<form className="popover location-menu" onSubmit={e=>{e.preventDefault();locate()}}>
@@ -412,7 +412,11 @@ function App(){
             <label>Longitude <input aria-label="Longitude" inputMode="decimal" value={longitude} onChange={e=>setLongitude(e.target.value)}/></label>
             <p>Changing the map origin retains your drawing in local metres.</p>
             <button type="submit">Go to coordinates</button>
-            {project.anchor&&<button type="button" onClick={()=>{const next={...project};delete next.anchor;commit(next);setCamera(home);setMenu(null)}}>Return to sample context</button>}
+            {!atDefault&&<button type="button" onClick={()=>{
+              const anchor={...defaultAddress.anchor}
+              setLatitude(String(anchor.lat));setLongitude(String(anchor.lon))
+              commit({...project,anchor});setCamera(home);setMenu(null)
+            }}>Use Bradford Street coordinates</button>}
           </form>}
         </div>
         <div className="map-right">
@@ -436,7 +440,7 @@ function App(){
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
         <div className="map-legend"><span><i className="redline"/>Site boundary</span>{(['apartment','house','office','pbsa'] as const).filter(type=>project.blocks.some(b=>b.type===type)).map(type=>
           <span key={type}><i className={type} style={type==='house'?{background:project.colours['3B5P']}:undefined}/>{blockTypes[type].legend}</span>)}</div>
-        {project.anchor&&<a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>}
+        {project.anchor&&layers.map&&<a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>}
         <div className="map-scale"><span>{scaleMetres} m</span><i style={{width:scaleMetres*scale}}/></div>
       </section>
       <aside className="sidebar" aria-label="Project inspector">
@@ -518,7 +522,7 @@ function App(){
       <div><span className="status-dot"/><strong>{plan?'Plan view':'3D view'}</strong><span className="foot-divider"/><span>Local coordinates · metres</span></div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold both the middle and left buttons to pan while using another tool. In Plan, middle-drag also pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=15/52.48/-1.90" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold both the middle and left buttons to pan while using another tool. In Plan, middle-drag also pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
