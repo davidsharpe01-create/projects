@@ -19,6 +19,7 @@ export const frontage = (p:Point[]) => p.slice(1).reduce((sum,b,i)=>sum+length(p
 export const depthFor = (target:number,left=defaults.party/2,right=defaults.party/2) =>
   target / defaults.houseFloors / (defaults.frontage-left-right) + 2*defaults.external
 export const height = (b:Block) => b.type==='house' ? defaults.houseHeight*defaults.houseFloors : b.ground+(b.floors-1)*b.upper
+export const apartmentStoreys={min:1,max:30}
 export const floors = (b:Block) => b.type==='house' ? defaults.houseFloors : b.floors
 export const levels = (b:Block) => Array.from({length:floors(b)},(_,i)=>b.type==='house'?(i+1)*defaults.houseHeight:b.ground+i*b.upper)
 const minus = (a:Point,b:Point):Point => [a[0]-b[0],a[1]-b[1]]

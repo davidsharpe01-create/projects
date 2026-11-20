@@ -138,7 +138,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     }
     // A roof is horizontal, so depth across it depends only on screen height.
     const roofDepth=plan?()=>0:([,y]:Point)=>depth(poly[0],z)+(y-top[0][1])*Math.sqrt(1-camera.tilt**2)/(s*camera.tilt)
-    addSurface({id,shape:top,depth:roofDepth},()=>path(top,material.roof,material.line,id===selected?1.75:.8))
+    addSurface({id,shape:top,depth:roofDepth,roof:true},()=>path(top,material.roof,material.line,id===selected?1.75:.8))
   }
   if(layers.context&&!project.anchor) buildings.forEach(({poly,z})=>face(poly,z,contextMaterial,[]))
   if(layers.trees&&!project.anchor) visibleTrees.filter(({p})=>!inside(p,boundary)).forEach(({p,r,h,c})=>{
@@ -161,7 +161,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       ctx.fillStyle='#d8e0ce55';ctx.fill()
     })
   })
-  const labels:{p:Point;name:string;selected:boolean}[]=[]
+  const labels:{p:Point;name:string;selected:boolean;resize:boolean}[]=[]
   project.blocks.forEach(b=>{
     if(plan && floor>=levels(b).length)return
     const polys=footprints(b,project.targets),z=plan?0:height(b)+b.level
@@ -172,7 +172,9 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     polys.forEach(poly=>face(poly,z,material,levels(b),b.id,plan?0:b.level))
     if(group.length&&(b.id===selected||(plan&&layers.labels))){
       const center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)
-      labels.push({p:xy(center,z),name:b.name,selected:b.id===selected})
+      const resize=!plan&&editFrontage&&b.id===selected&&b.type==='apartment'
+      const name=resize?b.name+'  ↕  '+b.floors+'F':b.name
+      labels.push({p:xy(center,z),name,selected:b.id===selected,resize})
     }
   })
   surfaces.forEach((surface,index)=>{
@@ -198,9 +200,11 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     surface.paint()
     ctx.restore()
   })
-  labels.forEach(({p:[x,y],name,selected:chosen})=>{
+  let heightHandle:Point[]=[]
+  labels.forEach(({p:[x,y],name,selected:chosen,resize})=>{
     ctx.font='600 11px system-ui'
     const width=ctx.measureText(name).width+21
+    if(resize)heightHandle=rect(x-width/2,y-11,width,22)
     ctx.beginPath();ctx.roundRect(x-width/2,y-11,width,22,5)
     ctx.fillStyle=chosen?'#206751':'#fdfcf8';ctx.fill()
     ctx.fillStyle=chosen?'#fff':'#35574c';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,x,y+.5)
@@ -220,5 +224,6 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.beginPath();ctx.arc(...p,r,0,2*Math.PI);ctx.fillStyle='#fffdf5';ctx.fill()
     ctx.strokeStyle=colour;ctx.lineWidth=2;ctx.stroke()
   }
-  return {pick:(point:Point)=>pickSurface(surfaces,point),handles}
+  return {pick:(point:Point)=>pickSurface(surfaces,point),handles,
+    heightAt:(point:Point)=>heightHandle.length>0&&(inside(point,heightHandle)||pickSurface(surfaces,point,true)===selected)}
 }

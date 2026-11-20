@@ -1,7 +1,7 @@
 import {inside,type Point} from './model.ts'
 
 export type Depth = (point:Point)=>number
-export type Surface = {shape:Point[];depth:Depth;id?:string}
+export type Surface = {shape:Point[];depth:Depth;id?:string;roof?:boolean}
 const tolerance=1e-6
 
 export function depthPlane(a:Point,b:Point,c:Point,za:number,zb:number,zc:number):Depth {
@@ -29,14 +29,14 @@ export function foregroundShape(target:Surface,other:Surface,otherWinsTie:boolea
   return polygon
 }
 
-export function pickSurface(surfaces:Surface[],point:Point) {
-  let closest=-Infinity,id:string|undefined
+export function pickSurface(surfaces:Surface[],point:Point,roofOnly=false) {
+  let closest=-Infinity,visible:Surface|undefined
   for(const surface of surfaces){
     const depth=surface.depth(point)
     if(depth>=closest-tolerance&&inside(point,surface.shape)){
       closest=depth
-      id=surface.id
+      visible=surface
     }
   }
-  return id??null
+  return roofOnly&&!visible?.roof?null:visible?.id??null
 }
