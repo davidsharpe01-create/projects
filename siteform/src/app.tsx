@@ -389,7 +389,7 @@ function App(){
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['map','Street map'],['grid','10 m grid'],['labels','Plan labels']] as const).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>setLayers({...layers,[id]:e.target.checked})}/>{label}</label>)}
+            {([['map','Street map'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>id!=='map'||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>setLayers({...layers,[id]:e.target.checked})}/>{label}</label>)}
             <label className="range">Massing opacity<input aria-label="Massing opacity" type="range" min=".25" max="1" step=".05" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/></label>
           </div>}
         </div>
