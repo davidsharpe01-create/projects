@@ -16,8 +16,8 @@ export const length = (a:Point,b:Point) => Math.hypot(b[0]-a[0],b[1]-a[1])
 const signedArea = (p:Point[]) => p.reduce((sum,a,i)=>{const b=p[(i+1)%p.length];return sum+a[0]*b[1]-a[1]*b[0]},0)/2
 export const area = (p:Point[]) => Math.abs(signedArea(p))
 export const frontage = (p:Point[]) => p.slice(1).reduce((sum,b,i)=>sum+length(p[i],b),0)
-export const depthFor = (target:number,left=defaults.party/2,right=defaults.party/2) =>
-  target / defaults.houseFloors / (defaults.frontage-left-right) + 2*defaults.external
+export const depthFor = (target:number) =>
+  target / defaults.houseFloors / (defaults.frontage-defaults.party) + 2*defaults.external
 export const height = (b:Block) => b.type==='house' ? defaults.houseHeight*defaults.houseFloors : b.ground+(b.floors-1)*b.upper
 export const apartmentStoreys={min:1,max:30}
 export const floors = (b:Block) => b.type==='house' ? defaults.houseFloors : b.floors
@@ -55,20 +55,18 @@ function rectangle(a:Point,b:Point,depth:number):Point[] {
   return [a,b,[b[0]+p[0]-a[0],b[1]+p[1]-a[1]],p]
 }
 function houseUnits(line:Point[],target:number) {
+  const depth=depthFor(target)
+  const clearDepth=depth-2*defaults.external
   return line.slice(1).flatMap((end,i)=>{
     const start=line[i],count=Math.floor((length(start,end)+1e-7)/defaults.frontage)
-    let previousDepth=0
     return Array.from({length:count},(_,j)=>{
       const left=j===0?defaults.external:defaults.party/2
       const right=j===count-1?defaults.external:defaults.party/2
-      const depth=depthFor(target,left,right)
       const internalWidth=defaults.frontage-(j===0?left:0)-(j===count-1?right:0)
-      // A step between neighbouring rear walls exposes part of the deeper flank.
-      const exposedFlank=j?Math.abs(depth-previousDepth)*defaults.external:0
-      previousDepth=depth
       return {
         outline:rectangle(pointAlong(start,end,j*defaults.frontage),pointAlong(start,end,(j+1)*defaults.frontage),depth),
-        internalArea:internalWidth*(depth-2*defaults.external)-exposedFlank
+        internalArea:internalWidth*clearDepth,
+        usableArea:(defaults.frontage-left-right)*clearDepth
       }
     })
   })
@@ -187,7 +185,8 @@ export function blockStats(b:Block,p:Project) {
     !inside(a,p.boundary) || p.boundary.some((c,j)=>intersects(a,poly[(i+1)%poly.length],c,p.boundary[(j+1)%p.boundary.length]))
   ))
   const houses=b.type==='house'?outlines.length:0
-  return {footprint, gross, gia, houses, usable:houses*p.targets[b.houseType], outside}
+  const usable=units?units.reduce((sum,unit)=>sum+unit.usableArea,0)*floors(b):0
+  return {footprint, gross, gia, houses, usable, outside}
 }
 export function development(p:Project) {
   const site=area(p.boundary)

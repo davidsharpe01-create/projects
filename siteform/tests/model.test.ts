@@ -15,7 +15,7 @@ test('sample has three editable, valid and contained blocks',()=>{
   assert.ok(csv(sample).includes('Site total'))
 })
 
-test('45 m frontage fits ten three-storey houses at each type’s net target',()=>{
+test('45 m frontage fits ten three-storey houses at uniform depth and measures end units accurately',()=>{
   const run=newBlock(sample,'house',[[0,0],[45,0]])
   for(const houseType of ['3B5P','3B6P'] as const){
     const block={...run,houseType}
@@ -28,9 +28,10 @@ test('45 m frontage fits ten three-storey houses at each type’s net target',()
       const partyAllowances=i===0||i===9?.75:.30
       const externalDepth=length(poly[1],poly[2])
       near(measuredWidth,4.5)
-      near((externalDepth-1.2)*(measuredWidth-partyAllowances)*3,target)
+      near(externalDepth,depthFor(target))
+      near((externalDepth-1.2)*(measuredWidth-partyAllowances)*3,target*(measuredWidth-partyAllowances)/4.2)
     })
-    near(blockStats(block,sample).usable,10*target)
+    near(blockStats(block,sample).usable,8*target+2*target*3.75/4.2)
   }
   near(depthFor(99),99/3/4.2+1.2)
 })
@@ -83,7 +84,7 @@ test('indicative GIA deducts apartment external walls and updates with storeys',
   near(development(project).gia!,floorArea*2)
   near(blockStats({...block,floors:3},project).gia!,floorArea*3)
   const house=newBlock(sample,'house',[[0,0],[4.5,0]])
-  near(blockStats(house,sample).gia!,99)
+  near(blockStats(house,sample).gia!,99*3.3/4.2)
 })
 
 test('end setbacks reduce only the selected floor and above, and update floor areas',()=>{

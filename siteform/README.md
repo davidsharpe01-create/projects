@@ -21,7 +21,7 @@ Click each boundary corner or frontage vertex in order and press **Finish**. Dra
 
 React manages workspace state and undo transactions. The TypeScript geometry model calculates footprints, site containment and areas independently. A Canvas renderer projects local geometry into 3D and plan and exposes hit targets for block selection. OpenStreetMap tiles supply optional geographic context. Local storage keeps a single design option.
 
-External floor area is the footprint measured to the outside face on each floor. House usable area is measured to internal faces, with 600 mm external walls and 300 mm party walls apportioned to adjacent units. End units are deeper where the external wall reduces clear frontage. Complete 4.5 m units fit independently on each straight segment. The overview shows indicative gross internal area (GIA) for all blocks, measured inside the modelled external walls and including internal partitions. Apartment layouts are pending.
+External floor area is the footprint measured to the outside face on each floor. House usable area is measured to internal faces, with 600 mm external walls and 300 mm party walls apportioned to adjacent units. All units use the typology depth set by an internal terraced unit. End units stay flush with the run and consequently have less usable area. Complete 4.5 m units fit independently on each straight segment. The overview shows indicative gross internal area (GIA) for all blocks, measured inside the modelled external walls and including internal partitions. Apartment layouts are pending.
 
 ## Cloudflare Pages
 
