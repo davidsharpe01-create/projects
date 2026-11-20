@@ -4,6 +4,7 @@ import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type BlockType, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
+import {loadContext,type ContextBuilding} from './context'
 import {blankProject,defaultAddress,isDefaultAddress,restoreProject} from './project'
 import './style.css'
 
@@ -57,6 +58,21 @@ function App(){
   const selectedFloor=Math.min(editFloor,Math.max(0,(selected?.floors??1)-1))
   const [camera,setCamera]=useState<Camera>(home)
   const [layers,setLayers]=useState(initialLayers)
+  const [nearby,setNearby]=useState<{anchor:Project['anchor'];buildings:ContextBuilding[];status:'loading'|'ready'|'unavailable'}>()
+  const [contextAttempt,retryContext]=useState(0)
+  const {anchor}=project
+  const contextStatus=nearby&&nearby.anchor?.lat===anchor?.lat&&nearby.anchor?.lon===anchor?.lon?nearby:undefined
+  useEffect(()=>{
+    if(!layers.context||!anchor)return
+    const controller=new AbortController()
+    setNearby({anchor,buildings:[],status:'loading'})
+    loadContext(anchor,controller.signal).then(buildings=>{
+      if(!controller.signal.aborted)setNearby({anchor,buildings,status:'ready'})
+    }).catch(()=>{
+      if(!controller.signal.aborted)setNearby({anchor,buildings:[],status:'unavailable'})
+    })
+    return()=>controller.abort()
+  },[layers.context,anchor,contextAttempt])
   const [opacity,setOpacity]=useState(1)
   const [draft,setDraft]=useState<Point[]>([])
   const [pointer,setPointer]=useState<Point|null>(null)
@@ -88,8 +104,8 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',refresh:()=>setSize(n=>n+1)})
-  },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool])
+    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',context:contextStatus?.buildings??[]})
+  },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus])
   function commit(next:Project){
     setHistory(h=>JSON.stringify(next)===JSON.stringify(h.current)?h:{past:[...h.past.slice(-49),h.current],current:next,future:[]})
   }
@@ -419,7 +435,7 @@ function App(){
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['map','Street map'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>id!=='map'||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>setLayers({...layers,[id]:e.target.checked})}/>{label}</label>)}
+            {([['context','Existing buildings'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>id!=='context'||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>setLayers({...layers,[id]:e.target.checked})}/>{label}</label>)}
             <label className="range">Massing opacity<input aria-label="Massing opacity" type="range" min=".25" max="1" step=".05" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/></label>
           </div>}
         </div>
@@ -451,7 +467,18 @@ function App(){
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
         {(project.boundary.length>0||project.blocks.length>0)&&<div className="map-legend">{project.boundary.length>0&&<span><i className="redline"/>Site boundary</span>}{(['apartment','house','office','pbsa'] as const).filter(type=>project.blocks.some(b=>b.type===type)).map(type=>
           <span key={type}><i className={type} style={type==='house'?{background:project.colours['3B5P']}:undefined}/>{blockTypes[type].legend}</span>)}</div>}
-        {project.anchor&&layers.map&&<a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>}
+        {anchor&&layers.context&&<>
+          {contextStatus?.status!=='ready'||!contextStatus.buildings.length
+            ?<div className="context-status" role="status">
+              {contextStatus?.status==='unavailable'?<>Building context unavailable <button type="button" onClick={()=>retryContext(n=>n+1)}>Retry</button></>:
+                contextStatus?.status==='ready'?'No existing buildings found':'Loading existing buildings…'}
+            </div>:null}
+          <div className="attribution" title="Indicative building heights">
+            <a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a>
+            {' · '}<a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">© OpenMapTiles</a>
+            {' · '}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
+          </div>
+        </>}
         <div className="map-scale"><span>{scaleMetres} m</span><i style={{width:scaleMetres*scale}}/></div>
       </section>
       <aside className="sidebar" aria-label="Project inspector">

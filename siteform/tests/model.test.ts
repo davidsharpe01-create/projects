@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { adjustSetback, endInset, floorOutline, resizeStoreys, area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, length, newBlock, validPolygon } from '../src/model.ts'
 import { legacySample as sample, blankProject, restoreProject } from '../src/project.ts'
-import { geographicPoint, mapFrame } from '../src/basemap.ts'
+import { geographicPoint, mapFrame } from '../src/geography.ts'
 const near=(a:number,b:number)=>assert.ok(Math.abs(a-b)<1e-7,`${a} ≠ ${b}`)
 
 test('sample has three editable, valid and contained blocks',()=>{

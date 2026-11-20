@@ -166,3 +166,7 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
   .summary-grid strong { font-size: 26px }
   .draw-message { max-width: calc(100% - 83px); flex-wrap: wrap }
 }
+
+.context-status { position: absolute; top: 17px; left: 17px; padding: 7px 9px; border: 1px solid var(--line); background: var(--white); font-size: 12px }
+.floor-picker ~ .context-status { top: 60px }
+.context-status button { margin-left: 5px; text-decoration: underline }

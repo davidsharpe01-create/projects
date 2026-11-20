@@ -1,11 +1,11 @@
 import type {SnapGuide} from './snap'
-import { paintMap } from './basemap'
+import type {ContextBuilding} from './context'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
 import { footprints, levels, height, floors, floorOutline, endInset, inside, type Point, type Project } from './model'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
-export type Layers = {map:boolean; grid:boolean; labels:boolean}
-export const initialLayers:Layers={map:true,grid:false,labels:true}
+export type Layers = {context:boolean; grid:boolean; labels:boolean}
+export const initialLayers:Layers={context:true,grid:false,labels:true}
 const rect=(x:number,y:number,w:number,d:number):Point[]=>[[x,y],[x+w,y],[x+w,y+d],[x,y+d]]
 export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const angle=plan?0:c.angle
@@ -20,7 +20,7 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
   return {project,invert,s,depth}
 }
-type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; refresh:()=>void}
+type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; context:ContextBuilding[]}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
@@ -28,7 +28,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)
   }
   const {camera,plan,project,selected,draft,pointer,guide,layers,opacity,editFrontage,editBoundary,floor,editFloor}=scene
-  const {project:xy,invert,s,depth}=projection(w,h,camera,plan)
+  const {project:xy,s,depth}=projection(w,h,camera,plan)
   ctx.setTransform(dpr,0,0,dpr,0,0)
   ctx.fillStyle='#eeeae3';ctx.fillRect(0,0,w,h)
   ctx.lineJoin='round';ctx.lineCap='round'
@@ -40,7 +40,6 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.stroke()}
   }
   const world=(p:Point[],fill?:string,stroke?:string,width=1,close=true,z=0)=>path(p.map(a=>xy(a,z)),fill,stroke,width,close)
-  if(project.anchor&&layers.map)paintMap(ctx,project.anchor,s,[w,h],xy,invert,scene.refresh)
   if(layers.grid){
     for(let i=-300;i<=300;i+=10){
       world([[i,-300],[i,300]],undefined,'#64776d44',.8,false)
@@ -65,12 +64,12 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     pbsa:{roof:'#c8b8da',walls:['#a291ba','#8b77a6','#9c88b1','#b0a0c5'],line:'#69527e',floor:'#ede6f5'}
   }
   const house={roof:'#d8b284',walls:['#b28b61','#a67d55','#b59069','#c6a27a'],line:'#8f6f50',floor:'#e4c8a8'}
-  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true)=>{
+  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true,holes:Point[][]=[],triangles?:Point[][])=>{
     const top=poly.map(p=>xy(p,z))
     if(!plan){
       const winding=poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+p[0]*q[1]-p[1]*q[0]},0)
-      poly.forEach((p,i)=>{
-        const q=poly[(i+1)%poly.length],a=xy(p,base),b=xy(q,base)
+      for(const ring of [poly,...holes])ring.forEach((p,i)=>{
+        const q=ring[(i+1)%ring.length],a=xy(p,base),b=xy(q,base)
         if((b[0]-a[0])*Math.sign(winding)>=-1e-7)return
         const high=xy(p,z)
         const shape=[a,b,xy(q,z),high]
@@ -84,7 +83,24 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     if(!cap)return
     // A roof is horizontal, so depth across it depends only on screen height.
     const roofDepth=plan?()=>0:([,y]:Point)=>depth(poly[0],z)+(y-top[0][1])*Math.sqrt(1-camera.tilt**2)/(s*camera.tilt)
-    addSurface({id,shape:top,depth:roofDepth,roof:topRoof,floor:storey},()=>path(top,material.roof,material.line,id===selected?1.75:.8))
+    if(triangles){
+      for(const triangle of triangles){
+        const shape=triangle.map(p=>xy(p,z))
+        addSurface({shape,depth:roofDepth},()=>path(shape,material.roof))
+      }
+    }else{
+      addSurface({id,shape:top,depth:roofDepth,roof:topRoof,floor:storey},
+        ()=>path(top,material.roof,material.line,id&&id===selected?1.75:.8))
+    }
+  }
+  const contextMaterial={roof:'#dedbd3',walls:['#cdc8be','#bdb8ae','#c8c3b9','#d4cfc5'],line:'#9e988d',floor:'#dedbd3'}
+  if(layers.context)for(const building of scene.context){
+    const [outline,...holes]=building.rings
+    if(plan||building.height===0){
+      for(const ring of building.rings)world(ring,undefined,contextMaterial.line,.9)
+    }else{
+      face(outline,building.height,contextMaterial,[],undefined,building.base,undefined,true,false,holes,building.triangles)
+    }
   }
   const labels:{p:Point;name:string;selected:boolean;resize:boolean}[]=[]
   project.blocks.forEach(b=>{

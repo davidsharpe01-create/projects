@@ -1,6 +1,6 @@
 # Siteform
 
-Siteform is a browser-based residential masterplanning review app. A new project starts empty on the street map at 321 Bradford Street, Birmingham B5 6ET. It stores edits in the browser.
+Siteform is a browser-based residential masterplanning review app. A new project starts empty with existing 3D building context at 321 Bradford Street, Birmingham B5 6ET. It stores edits in the browser.
 
 ## Run locally
 
@@ -13,13 +13,13 @@ npm run preview
 
 Open http://localhost:4173. Use Node.js 24 or newer.
 
-Click the site location badge to enter latitude and longitude and load an OpenStreetMap basemap. Model coordinates are in local metres, with east and south positive. The map transform uses a local approximation at the selected origin.
+Click the site location badge to enter latitude and longitude and load nearby buildings from OpenFreeMap. Model coordinates are in local metres, with east and south positive. The map transform uses a local approximation at the selected origin.
 
 Click each boundary corner or frontage vertex in order and press **Finish**. Draw frontages so the building projects to the right of the drawing direction. Click a building to inspect its properties and drag its frontage handles in either view. In 3D, drag the roof of a selected apartment block up or down to add or remove storeys. Click an upper floor in 3D or choose it under **Setback floor**, then drag either blue frontage end. The selected floor and floors above shorten together. Click empty space to finish editing. Choose **Boundary → Edit boundary** to drag the redline vertices. Middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold both middle and left buttons to pan while using another tool, or middle-drag in Plan. Scroll to zoom around the cursor and use **Fit model** to frame the site and blocks. Use **Export** for CSV or a JSON copy.
 
 ## Architecture and measurements
 
-React manages workspace state and undo transactions. The TypeScript geometry model calculates footprints, site containment and areas independently. A Canvas renderer projects local geometry into 3D and plan and exposes hit targets for block selection. OpenStreetMap tiles supply optional geographic context. Local storage keeps a single design option.
+React manages workspace state and undo transactions. The TypeScript geometry model calculates footprints, site containment and areas independently. A Canvas renderer projects local geometry into 3D and plan and exposes hit targets for block selection. OpenFreeMap vector tiles supply existing building context around the saved location. Turn it off under **Display layers → Existing buildings**. Heights are indicative. Local storage keeps a single design option.
 
 External floor area is the footprint measured to the outside face on each floor. House usable area is measured to internal faces, with 600 mm external walls and 300 mm party walls apportioned to adjacent units. All units use the typology depth set by an internal terraced unit. End units stay flush with the run and consequently have less usable area. Complete 4.5 m units fit independently on each straight segment. The overview shows indicative gross internal area (GIA) for all blocks, measured inside the modelled external walls and including internal partitions. Office and PBSA start at editable depths of 18 m and 16 m respectively. Apartment layouts and PBSA bed counts are pending.
 
