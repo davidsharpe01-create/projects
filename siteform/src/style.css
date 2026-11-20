@@ -37,6 +37,7 @@ a { color: inherit; text-underline-offset: 3px }
 .tool svg:last-child:not(:first-child) { width: 12px; height: 12px }
 .tool:hover, .square:hover, .layer-button:hover { background: var(--paper) }
 .tool.active, .square.active, .layer-button.active { background: #fae0d3; color: #66280f }
+.desktop-tools { display: none }
 .tool-divider { border-left: 1px solid var(--line); padding-left: 8px }
 .history { gap: 0 }
 .square, .layer-button { height: 32px; width: 33px; flex-shrink: 0 }
@@ -142,6 +143,10 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
 .location-menu p, .help-menu { line-height: 1.45 }
 .help-menu { bottom: calc(100% + 5px); top: auto; width: 260px }
 .attribution { position: absolute; right: 7px; bottom: 2px; background: var(--white); padding: 1px 4px; font-size: 9px }
+@media (min-width: 1100px) {
+  .desktop-tools { display: flex; align-items: center; gap: 4px }
+  .compact-tools { display: none }
+}
 @media (max-width: 920px) {
   main { grid-template-columns: minmax(0,1fr) 290px }
   .toolset, .view-actions { gap: 4px }

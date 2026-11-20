@@ -114,7 +114,8 @@ function App(){
   function redo(){setHistory(h=>h.future.length?{past:[...h.past,h.current],current:h.future[0],future:h.future.slice(1)}:h)}
   function choose(next:Tool){
     setDraft([]);setGuide(undefined);setNotice('');setTool(next);setMenu(null)
-    if(next==='boundary'||isBuildingTool(next)||next==='measure'||next==='vertices'){setPlan(true);setFloor(0)}
+    if(next==='measure'||next==='vertices')setPlan(true)
+    if(next==='boundary'||isBuildingTool(next)||next==='measure'||next==='vertices')setFloor(0)
   }
   function switchView(next:boolean){setPlan(next);if(!next)setFloor(0);if(draft.length||tool==='vertices')choose('select')}
   function setOption(next:typeof menu){setMenu(m=>m===next?null:next)}
@@ -425,7 +426,7 @@ function App(){
     <section className="toolbar" aria-label="Design tools">
       <div className="toolset">
         {tools.slice(0,2).map(t=><Button key={t.id} icon={t.icon} kind="tool" title={t.name} active={tool===t.id||(t.id==='boundary'&&tool==='vertices')} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>)}
-        <div className="menu-anchor">
+        <div className="menu-anchor compact-tools">
           <Button icon="building" kind="tool" title="Draw building" active={isBuildingTool(tool)} onClick={()=>setOption('draw')}>
             <span>{isBuildingTool(tool)?tools.find(t=>t.id===tool)?.name:'Draw building'}</span><Icon name="chevron" size={13}/>
           </Button>
@@ -433,11 +434,16 @@ function App(){
             {tools.filter(t=>isBuildingTool(t.id)).map(t=><Button key={t.id} icon={t.icon} kind="menu-tool" onClick={()=>choose(t.id)}>{t.name}</Button>)}
           </div>}
         </div>
-        <div className="menu-anchor">
+        <div className="menu-anchor compact-tools">
           <Button icon="settings" kind="tool" title="Edit tools" active={['move','rotate','measure'].includes(tool)} onClick={()=>setOption('tools')}><span>Tools</span><Icon name="chevron" size={13}/></Button>
           {menu==='tools'&&<div className="popover tool-menu">
             {tools.filter(t=>['move','rotate','measure'].includes(t.id)).map(t=><Button key={t.id} icon={t.icon} kind="menu-tool" onClick={()=>choose(t.id)}>{t.name}</Button>)}
           </div>}
+        </div>
+        <div className="desktop-tools">
+          {tools.slice(2).map(t=><div key={t.id} className={t.id==='move'?'tool-divider':undefined}>
+            <Button icon={t.icon} kind="tool" title={t.name} active={tool===t.id} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>
+          </div>)}
         </div>
         <div className="tool-divider history"><Button icon="undo" kind="square" title="Undo" disabled={!history.past.length} onClick={undo}/><Button icon="redo" kind="square" title="Redo" disabled={!history.future.length} onClick={redo}/></div>
       </div>
@@ -521,7 +527,7 @@ function App(){
             <span className="block-name"><strong>{b.name}</strong><small>{blockTypes[b.type].label}</small></span>
             <span className="storeys">{floors(b)}F</span><Icon name="right" size={13}/>
           </button>)}
-          {!project.blocks.length&&<p className="empty">Choose Draw building to start a frontage.</p>}
+          {!project.blocks.length&&<p className="empty">Choose a building type to draw a frontage.</p>}
         </div>
         {selected&&s&&<Panel title={selected.name+' properties'} icon="settings">
           <div className="properties" key={selected.id}>
