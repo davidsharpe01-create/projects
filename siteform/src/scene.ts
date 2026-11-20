@@ -1,12 +1,12 @@
+import earcut from 'earcut'
 import type {SnapGuide} from './snap'
 import type {ContextBuilding} from './context'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
-import { footprints, levels, height, floors, floorOutline, endInset, inside, type Point, type Project } from './model'
+import { footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
 export type Layers = {context:boolean; grid:boolean; labels:boolean}
 export const initialLayers:Layers={context:true,grid:false,labels:true}
-const rect=(x:number,y:number,w:number,d:number):Point[]=>[[x,y],[x+w,y],[x+w,y+d],[x,y+d]]
 export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const angle=plan?0:c.angle
   const s=Math.min(w/185,h/(plan?133:108))*c.zoom
@@ -102,7 +102,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       face(outline,building.height,contextMaterial,[],undefined,building.base,undefined,true,false,holes,building.triangles)
     }
   }
-  const labels:{p:Point;name:string;selected:boolean;resize:boolean}[]=[]
+  const labels:{p:Point;name:string;selected:boolean}[]=[]
+  let heightHandle:Point|undefined
   project.blocks.forEach(b=>{
     if(plan && floor>=levels(b).length)return
     const polys=footprints(b,project.targets),z=plan?0:height(b)+b.level
@@ -134,10 +135,23 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       polys.forEach(poly=>face(poly,z,material,levels(b),b.id,plan?0:b.level))
     }
     if(group.length&&(b.id===selected||(plan&&layers.labels))){
-      const center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)
-      const resize=!plan&&editFrontage&&b.id===selected&&b.type!=='house'
-      const name=resize?b.name+'  ↕  '+b.floors+'F':b.name
-      labels.push({p:xy(center,z),name,selected:b.id===selected,resize})
+      let center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)
+      if(!plan&&editFrontage&&b.id===selected&&b.type!=='house'){
+        if(!inside(center,group)){
+          const indices=earcut(group.flat())
+          let largest=0
+          for(let i=0;i<indices.length;i+=3){
+            const triangle=indices.slice(i,i+3).map(index=>group[index])
+            const size=area(triangle)
+            if(size>largest){
+              largest=size
+              center=[(triangle[0][0]+triangle[1][0]+triangle[2][0])/3,
+                (triangle[0][1]+triangle[1][1]+triangle[2][1])/3]
+            }
+          }
+        }
+        heightHandle=xy(center,z)
+      }else labels.push({p:xy(center,z),name:b.name,selected:b.id===selected})
     }
   })
   surfaces.forEach((surface,index)=>{
@@ -163,15 +177,20 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     surface.paint()
     ctx.restore()
   })
-  let heightHandle:Point[]=[]
-  labels.forEach(({p:[x,y],name,selected:chosen,resize})=>{
+  labels.forEach(({p:[x,y],name,selected:chosen})=>{
     ctx.font='600 11px system-ui'
     const width=ctx.measureText(name).width+21
-    if(resize)heightHandle=rect(x-width/2,y-11,width,22)
     ctx.beginPath();ctx.roundRect(x-width/2,y-11,width,22,5)
     ctx.fillStyle=chosen?'#206751':'#fdfcf8';ctx.fill()
     ctx.fillStyle=chosen?'#fff':'#35574c';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,x,y+.5)
   })
+  if(heightHandle){
+    const [x,y]=heightHandle,colour='#176f59'
+    dot(heightHandle,colour,8)
+    path([[x,y-4.5],[x,y+4.5]],undefined,colour,1.4,false)
+    path([[x-2.5,y-2],[x,y-4.5],[x+2.5,y-2]],undefined,colour,1.4,false)
+    path([[x-2.5,y+2],[x,y+4.5],[x+2.5,y+2]],undefined,colour,1.4,false)
+  }
   const block=editFrontage?project.blocks.find(b=>b.id===selected && (!plan||floor<floors(b))):undefined
   const setbackHandles:Point[]=[]
   if(block&&block.type!=='house'&&!plan&&editFloor>0&&editFloor<block.floors){
@@ -220,5 +239,5 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   }
   return {pick:(point:Point)=>pickSurface(surfaces,point),handles,
     setbackHandles,pickFloor:(point:Point)=>visibleSurface(surfaces,point)?.floor??0,
-    heightAt:(point:Point)=>heightHandle.length>0&&(inside(point,heightHandle)||pickSurface(surfaces,point,true)===selected)}
+    heightAt:(point:Point)=>!!heightHandle&&(length(point,heightHandle)<12||pickSurface(surfaces,point,true)===selected)}
 }
