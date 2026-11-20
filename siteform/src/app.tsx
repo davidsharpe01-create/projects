@@ -123,12 +123,17 @@ function App(){
   useEffect(()=>{
     const listener=(e:KeyboardEvent)=>{
       const target=e.target as HTMLElement
-      if(['INPUT','SELECT','TEXTAREA'].includes(target.tagName))return
+      if(e.isComposing||target.isContentEditable||['INPUT','SELECT','TEXTAREA'].includes(target.tagName))return
       if(e.ctrlKey||e.metaKey){
         if(e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo()}
         if(e.key.toLowerCase()==='y'){e.preventDefault();redo()}
         if(e.key.toLowerCase()==='c'&&selected){clipboard.current=selected;setNotice(selected.name+' copied.')}
         if(e.key.toLowerCase()==='v'&&clipboard.current){e.preventDefault();duplicate(clipboard.current)}
+        return
+      }
+      if(e.key==='Delete'&&selected&&!e.altKey&&!e.shiftKey&&!drag.current){
+        e.preventDefault()
+        remove()
         return
       }
       if(e.key==='Escape'){choose('select');setSelection(null)}
@@ -396,7 +401,7 @@ function App(){
       <div><span className="status-dot"/><strong>{plan?'Plan view':'3D view'}</strong><span className="foot-divider"/><span>Local coordinates · metres</span></div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>setSnap(e.target.checked)}/>Snap to 0.5 m</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Click a building and drag its frontage handles in either view. Click empty space to finish. Left-drag elsewhere to pan, right-drag to orbit in 3D, and scroll to zoom.</p><p>Use the Boundary tool to redraw the redline. Clear the selection and press <kbd>E</kbd> to edit its vertices.</p><p>Press Enter to finish drawing or Esc to leave a tool. Use Ctrl/Cmd+Z to undo.</p><a href="https://www.openstreetmap.org/#map=15/52.48/-1.90" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Click a building and drag its frontage handles in either view. Click empty space to finish. Left-drag elsewhere to pan, right-drag to orbit in 3D, and scroll to zoom.</p><p>Use the Boundary tool to redraw the redline. Clear the selection and press <kbd>E</kbd> to edit its vertices.</p><p>Press Enter to finish drawing or Esc to leave a tool. Press Delete to remove the selected block. Use Ctrl/Cmd+Z to undo.</p><a href="https://www.openstreetmap.org/#map=15/52.48/-1.90" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
