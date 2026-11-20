@@ -25,7 +25,6 @@ function load():Project {
 }
 const format=(n:number,places=0)=>n.toLocaleString('en-GB',{maximumFractionDigits:places,minimumFractionDigits:places})
 const pointDiff=(p:Point,q:Point):Point=>[p[0]-q[0],p[1]-q[1]]
-const defaultOption='Base option'
 type Drag={screen:Point;point:Point;camera:Camera;project:Project;id:string|null;action:'orbit'|'pan'|'move'|'rotate'|'vertices'|'height'|'setback'|'draw';vertex:number;changed:boolean;last:Point;navigation:boolean;floor:number}
 
 function NumberField({label,value,update,min,max,step=1,unit='m'}:{label:string;value:number;update:(n:number)=>void;min:number;max:number;step?:number;unit?:string}){
@@ -62,7 +61,7 @@ function App(){
   const [draft,setDraft]=useState<Point[]>([])
   const [pointer,setPointer]=useState<Point|null>(null)
   const [preview,setPreview]=useState<Project|null>(null)
-  const [menu,setMenu]=useState<'layers'|'settings'|'export'|'help'|'location'|null>(null)
+  const [menu,setMenu]=useState<'layers'|'settings'|'export'|'help'|'location'|'draw'|'tools'|null>(null)
   const [latitude,setLatitude]=useState(String(project.anchor?.lat??defaultAddress.anchor.lat))
   const [longitude,setLongitude]=useState(String(project.anchor?.lon??defaultAddress.anchor.lon))
   const [notice,setNotice]=useState('')
@@ -370,7 +369,24 @@ function App(){
   const shownFloor=Math.min(floor,storyCount-1)
   return <div className="app">
     <header className="topbar">
-      <div className="breadcrumbs"><span>Projects</span><Icon name="right" size={13}/><strong>{locationTitle}</strong></div>
+        <div className="site-location">
+          <button className="site-title" type="button" aria-expanded={menu==='location'} onClick={()=>setOption('location')}>
+            <span><strong>{locationTitle}</strong><small>{atDefault?defaultAddress.locality:project.anchor?project.anchor.lat.toFixed(5)+'°, '+project.anchor.lon.toFixed(5)+'°':'Set a map location'}</small></span>
+            <Icon name="chevron" size={13}/>
+          </button>
+          {menu==='location'&&<form className="popover location-menu" onSubmit={e=>{e.preventDefault();locate()}}>
+            <strong>Map location</strong>
+            <label>Latitude <input aria-label="Latitude" inputMode="decimal" value={latitude} onChange={e=>setLatitude(e.target.value)}/></label>
+            <label>Longitude <input aria-label="Longitude" inputMode="decimal" value={longitude} onChange={e=>setLongitude(e.target.value)}/></label>
+            <p>Changing the map origin retains your drawing in local metres.</p>
+            <button type="submit">Go to coordinates</button>
+            {!atDefault&&<button type="button" onClick={()=>{
+              const anchor={...defaultAddress.anchor}
+              setLatitude(String(anchor.lat));setLongitude(String(anchor.lon))
+              commit({...project,anchor});setCamera(home);setMenu(null)
+            }}>Use Bradford Street coordinates</button>}
+          </form>}
+        </div>
       <div className="top-actions">
         <span className="save"><Icon name={saved?'check':'warning'} size={15}/>{saved?'Saved locally':'Save unavailable'}</span>
         <div className="menu-anchor"><Button icon="download" kind="export" onClick={()=>setOption('export')}>Export<Icon name="chevron" size={13}/></Button>
@@ -380,7 +396,21 @@ function App(){
     </header>
     <section className="toolbar" aria-label="Design tools">
       <div className="toolset">
-        {tools.map(t=><div key={t.id} className={t.id==='move'?'tool-divider':''}><Button icon={t.icon} kind="tool" title={t.name} active={tool===t.id} onClick={()=>choose(t.id)}>{t.name}</Button></div>)}
+        {tools.slice(0,2).map(t=><Button key={t.id} icon={t.icon} kind="tool" title={t.name} active={tool===t.id||(t.id==='boundary'&&tool==='vertices')} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>)}
+        <div className="menu-anchor">
+          <Button icon="building" kind="tool" title="Draw building" active={isBuildingTool(tool)} onClick={()=>setOption('draw')}>
+            <span>{isBuildingTool(tool)?tools.find(t=>t.id===tool)?.name:'Draw building'}</span><Icon name="chevron" size={13}/>
+          </Button>
+          {menu==='draw'&&<div className="popover tool-menu">
+            {tools.filter(t=>isBuildingTool(t.id)).map(t=><Button key={t.id} icon={t.icon} kind="menu-tool" onClick={()=>choose(t.id)}>{t.name}</Button>)}
+          </div>}
+        </div>
+        <div className="menu-anchor">
+          <Button icon="settings" kind="tool" title="Edit tools" active={['move','rotate','measure'].includes(tool)} onClick={()=>setOption('tools')}><span>Tools</span><Icon name="chevron" size={13}/></Button>
+          {menu==='tools'&&<div className="popover tool-menu">
+            {tools.filter(t=>['move','rotate','measure'].includes(t.id)).map(t=><Button key={t.id} icon={t.icon} kind="menu-tool" onClick={()=>choose(t.id)}>{t.name}</Button>)}
+          </div>}
+        </div>
         <div className="tool-divider history"><Button icon="undo" kind="square" title="Undo" disabled={!history.past.length} onClick={undo}/><Button icon="redo" kind="square" title="Redo" disabled={!history.future.length} onClick={redo}/></div>
       </div>
       <div className="view-actions">
@@ -400,25 +430,6 @@ function App(){
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
           onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={()=>{drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
           onAuxClick={e=>{if(e.button===1)e.preventDefault()}}/>
-        <div className="site-location">
-          <button className="site-title" type="button" aria-expanded={menu==='location'} onClick={()=>setOption('location')}>
-            <span className="map-pin"><Icon name="location" size={16}/></span>
-            <span><strong>{locationTitle}</strong><small>{atDefault?defaultAddress.locality:project.anchor?project.anchor.lat.toFixed(5)+'°, '+project.anchor.lon.toFixed(5)+'°':'Set a map location'}</small></span>
-            <Icon name="chevron" size={13}/>
-          </button>
-          {menu==='location'&&<form className="popover location-menu" onSubmit={e=>{e.preventDefault();locate()}}>
-            <strong>Map location</strong>
-            <label>Latitude <input aria-label="Latitude" inputMode="decimal" value={latitude} onChange={e=>setLatitude(e.target.value)}/></label>
-            <label>Longitude <input aria-label="Longitude" inputMode="decimal" value={longitude} onChange={e=>setLongitude(e.target.value)}/></label>
-            <p>Changing the map origin retains your drawing in local metres.</p>
-            <button type="submit">Go to coordinates</button>
-            {!atDefault&&<button type="button" onClick={()=>{
-              const anchor={...defaultAddress.anchor}
-              setLatitude(String(anchor.lat));setLongitude(String(anchor.lon))
-              commit({...project,anchor});setCamera(home);setMenu(null)
-            }}>Use Bradford Street coordinates</button>}
-          </form>}
-        </div>
         <div className="map-right">
           <button className="compass" type="button" title="Reset view to north" onClick={()=>setCamera({...home,angle:0})}>
             <span>N</span><i style={{transform:'rotate('+(plan?0:camera.angle)+'rad)'}}/>
@@ -438,15 +449,14 @@ function App(){
           <Button icon="close" kind="square" title="Exit tool" onClick={()=>choose('select')}/>
         </div>}
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
-        <div className="map-legend"><span><i className="redline"/>Site boundary</span>{(['apartment','house','office','pbsa'] as const).filter(type=>project.blocks.some(b=>b.type===type)).map(type=>
-          <span key={type}><i className={type} style={type==='house'?{background:project.colours['3B5P']}:undefined}/>{blockTypes[type].legend}</span>)}</div>
+        {(project.boundary.length>0||project.blocks.length>0)&&<div className="map-legend">{project.boundary.length>0&&<span><i className="redline"/>Site boundary</span>}{(['apartment','house','office','pbsa'] as const).filter(type=>project.blocks.some(b=>b.type===type)).map(type=>
+          <span key={type}><i className={type} style={type==='house'?{background:project.colours['3B5P']}:undefined}/>{blockTypes[type].legend}</span>)}</div>}
         {project.anchor&&layers.map&&<a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>}
         <div className="map-scale"><span>{scaleMetres} m</span><i style={{width:scaleMetres*scale}}/></div>
       </section>
       <aside className="sidebar" aria-label="Project inspector">
         <div className="overview">
-          <div className="overline"><span/> DESIGN OPTION</div>
-          <div className="heading"><h1>{defaultOption}</h1><div className="menu-anchor"><Button icon="settings" title="Project settings" kind="square settings" active={menu==='settings'} onClick={()=>setOption('settings')}/>
+          <div className="heading"><h1>Overview</h1><div className="menu-anchor"><Button icon="settings" title="Project settings" kind="square settings" active={menu==='settings'} onClick={()=>setOption('settings')}/>
             {menu==='settings'&&<div className="popover settings-menu">
               <strong>House defaults</strong>
               {(['3B5P','3B6P'] as const).map(t=><div className="settings-row" key={t}>
@@ -458,22 +468,21 @@ function App(){
                 <input type="color" aria-label={t+' colour'} value={project.colours[t]} onChange={e=>commit({...project,colours:{...project.colours,[t]:e.target.value}})}/>
               </div>)}
             </div>}</div></div>
-          <p>Site masterplan</p>
           <div className="summary-grid" aria-live="polite">
             <div><span>Homes</span><strong>{format(totals.houses)}</strong></div>
-            <div><span>Dwellings per hectare</span><strong>{totals.site ? format(totals.density,1) : '—'} <small>dph</small></strong></div>
+            <div><span title="Dwellings per hectare">Density</span><strong>{totals.site ? format(totals.density,1) : '—'} <small>dph</small></strong></div>
             <div><span title="Indicative gross internal area">GIA</span><strong>{totals.gia===null?'—':format(totals.gia)} <small>m²</small></strong></div>
           </div>
-          <p className="summary-note">Homes and density count house runs. GIA includes all blocks.</p>
+          <p className="summary-note">Homes and density count house runs.</p>
         </div>
         <div className="block-list">
-          <div className="section-label">BUILDINGS <span>{project.blocks.length}</span></div>
+          <h2 className="section-label">Buildings{project.blocks.length>0&&<span>{project.blocks.length}</span>}</h2>
           {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');setSelection(b.id);setFloor(0);setEditFloor(0)}}>
             <span className={'block-icon '+b.type}><Icon name={b.type==='apartment'?'building':b.type} size={16}/></span>
             <span className="block-name"><strong>{b.name}</strong><small>{blockTypes[b.type].label}</small></span>
             <span className="storeys">{floors(b)}F</span><Icon name="right" size={13}/>
           </button>)}
-          {!project.blocks.length&&<p className="empty">Draw a frontage to add a building.</p>}
+          {!project.blocks.length&&<p className="empty">Choose Draw building to start a frontage.</p>}
         </div>
         {selected&&s&&<Panel title={selected.name+' properties'} icon="settings">
           <div className="properties" key={selected.id}>
@@ -503,7 +512,7 @@ function App(){
             </div>
           </div>
         </Panel>}
-        <Panel title="Development statistics" icon="chart">
+        <Panel title="Site statistics" icon="chart" initial={false}>
           <dl className="statistics">
             <div><dt>Site area</dt><dd>{format(totals.site)} m² · {format(totals.site/10000,2)} ha</dd></div>
             <div><dt>External floor area</dt><dd>{format(totals.gross)} m²</dd></div>
@@ -513,13 +522,13 @@ function App(){
           </dl>
           <p className="method">Indicative GIA measures inside external walls and includes internal partitions. External floor area uses the outside footprint.</p>
         </Panel>
-        <Panel title="Warnings" icon="warning" count={warnings.length}>
+        <Panel title="Warnings" icon="warning" count={warnings.length} initial={false}>
           <div className="warnings">{warnings.length?warnings.map(w=><p key={w}><Icon name="warning" size={14}/>{w}</p>):<p><Icon name="check" size={14}/>All blocks within the site boundary.</p>}</div>
         </Panel>
       </aside>
     </main>
     <footer>
-      <div><span className="status-dot"/><strong>{plan?'Plan view':'3D view'}</strong><span className="foot-divider"/><span>Local coordinates · metres</span></div>
+      <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
         {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold both the middle and left buttons to pan while using another tool. In Plan, middle-drag also pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}

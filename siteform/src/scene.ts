@@ -30,7 +30,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const {camera,plan,project,selected,draft,pointer,guide,layers,opacity,editFrontage,editBoundary,floor,editFloor}=scene
   const {project:xy,invert,s,depth}=projection(w,h,camera,plan)
   ctx.setTransform(dpr,0,0,dpr,0,0)
-  ctx.fillStyle='#d7dcd0';ctx.fillRect(0,0,w,h)
+  ctx.fillStyle='#eeeae3';ctx.fillRect(0,0,w,h)
   ctx.lineJoin='round';ctx.lineCap='round'
   const path=(points:Point[],fill?:string,stroke?:string,width=1,close=true)=>{
     if(!points.length)return
