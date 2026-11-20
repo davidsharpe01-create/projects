@@ -462,6 +462,10 @@ function App(){
             <Button icon={t.icon} kind="tool" title={t.name} active={tool===t.id} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>
           </div>)}
         </div>
+        <Button icon="ghost" kind="tool ghost-tool" title="Ghost existing buildings" active={tool==='ghost'}
+          disabled={!layers.context||!contextStatus?.data.buildings.length} onClick={()=>choose(tool==='ghost'?'select':'ghost')}>
+          <span>Ghost</span>
+        </Button>
         <div className="tool-divider history"><Button icon="undo" kind="square" title="Undo" disabled={!history.past.length} onClick={undo}/><Button icon="redo" kind="square" title="Redo" disabled={!history.future.length} onClick={redo}/></div>
       </div>
       <div className="view-actions">
@@ -474,8 +478,6 @@ function App(){
               setLayers({...layers,[id]:e.target.checked})
               if(id==='context'&&!e.target.checked&&tool==='ghost')choose('select')
             }}/>{label}</label>)}
-            {layers.context&&!!contextStatus?.data.buildings.length&&
-              <Button icon="building" kind="menu-tool" active={tool==='ghost'} onClick={()=>choose(tool==='ghost'?'select':'ghost')}>Ghost existing buildings</Button>}
             {ghosted.size>0&&<button type="button" onClick={()=>setGhosted(new Set())}>Restore all existing buildings</button>}
             <label className="range">Massing opacity<input aria-label="Massing opacity" type="range" min=".25" max="1" step=".05" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/></label>
           </div>}

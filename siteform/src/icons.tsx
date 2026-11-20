@@ -1,5 +1,6 @@
 const icons:Record<string,string>={
   cube:'M12 2 3 7v10l9 5 9-5V7l-9-5ZM3 7l9 5 9-5m-9 5v10',
+  ghost:'M12 2 4 6.5v11l8 4.5 8-4.5v-11L12 2ZM4 6.5l8 4.5 8-4.5m-8 4.5v11',
   mouse:'m5 3 15 9-7 1-3 7L5 3Z',
   boundary:'M6 4h12M4 6v12m16-12v12M6 20h12M2 2h4v4H2zm16 0h4v4h-4ZM2 18h4v4H2zm16 0h4v4h-4z',
   house:'m3 11 9-7 9 7m-2-2v11H5V9m5 11v-6h4v6',
@@ -28,5 +29,5 @@ const icons:Record<string,string>={
   help:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm-3-13a3 3 0 1 1 4 3c-1 .4-1 1-1 2m0 3v.1'
 }
 export function Icon({name,size=18}:{name:string;size?:number}){
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={icons[name]}/></svg>
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={icons[name]} strokeDasharray={name==='ghost'?'1 2.6':undefined}/></svg>
 }
