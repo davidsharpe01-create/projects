@@ -28,12 +28,12 @@ const format=(n:number,places=0)=>n.toLocaleString('en-GB',{maximumFractionDigit
 const pointDiff=(p:Point,q:Point):Point=>[p[0]-q[0],p[1]-q[1]]
 type Drag={screen:Point;point:Point;camera:Camera;project:Project;id:string|null;action:'orbit'|'pan'|'move'|'rotate'|'vertices'|'height'|'setback'|'draw';vertex:number;changed:boolean;last:Point;navigation:boolean;floor:number}
 
-function NumberField({label,value,update,min,max,step=1,unit='m'}:{label:string;value:number;update:(n:number)=>void;min:number;max:number;step?:number;unit?:string}){
+function NumberField({label,value,update,min,max,step=1,unit='m'}:{label:string;value:number;update:(n:number)=>void;min:number;max?:number;step?:number;unit?:string}){
   const [draft,change]=useState(String(value))
   useEffect(()=>change(String(value)),[value])
   return <label className="field"><span>{label}</span><div><input type="number" value={draft} min={min} max={max} step={step}
     onChange={e=>change(e.target.value)}
-    onBlur={()=>{const n=Number(draft);if(draft.trim()&&Number.isFinite(n)){const v=Math.min(max,Math.max(min,step===1?Math.round(n):n));change(String(v));update(v)}else change(String(value))}}/>{unit&&<small>{unit}</small>}</div></label>
+    onBlur={()=>{const n=Number(draft);if(draft.trim()&&Number.isFinite(n)){const v=Math.min(max??Infinity,Math.max(min,step===1?Math.round(n):n));change(String(v));update(v)}else change(String(value))}}/>{unit&&<small>{unit}</small>}</div></label>
 }
 function Button({icon,children,onClick,disabled=false,active=false,kind='',title}:{icon:string;children?:ReactNode;onClick:()=>void;disabled?:boolean;active?:boolean;kind?:string;title?:string}){
   return <button type="button" title={title} aria-label={title} disabled={disabled} aria-pressed={active||undefined} className={kind+' '+(active?'active':'')} onClick={onClick}><Icon name={icon}/>{children}</button>
@@ -542,11 +542,23 @@ function App(){
               </div>)}
             </div>}</div></div>
           <div className="summary-grid" aria-live="polite">
-            <div><span>Homes</span><strong>{format(totals.houses)}</strong></div>
-            <div><span title="Dwellings per hectare">Density</span><strong>{totals.site ? format(totals.density,1) : '—'} <small>dph</small></strong></div>
-            <div><span title="Indicative gross internal area">GIA</span><strong>{totals.gia===null?'—':format(totals.gia)} <small>m²</small></strong></div>
+            <div><span>Homes</span><strong>{totals.homes===null?'—':format(totals.homes)}</strong></div>
+            <div><span title="Dwellings per hectare">Density</span><strong>{totals.site&&totals.density!==null?format(totals.density,1):'—'} <small>dph</small></strong></div>
           </div>
-          <p className="summary-note">Homes and density count house runs.</p>
+          <p className="summary-note">{format(totals.houses)} houses · {totals.apartments===null?'Apartment estimate unavailable':format(totals.apartments)+' estimated apartments'}</p>
+          <div className="yield-setting">
+            <NumberField label="Apartment GIA per home" value={totals.apartmentAreaPerHome} min={1} step={.1} unit="m²"
+              update={apartmentAreaPerHome=>{
+                if(apartmentAreaPerHome!==totals.apartmentAreaPerHome)commit({...project,apartmentAreaPerHome})
+              }}/>
+          </div>
+          <h2 className="gia-heading">GIA by use</h2>
+          <dl className="gia-breakdown" aria-live="polite">
+            {(['house','apartment','office','pbsa'] as const).map(type=><div key={type}>
+              <dt>{blockTypes[type].legend}</dt>
+              <dd>{totals.giaByUse[type]===null?'—':format(totals.giaByUse[type])+' m²'}</dd>
+            </div>)}
+          </dl>
         </div>
         <div className="block-list">
           <h2 className="section-label">Buildings{project.blocks.length>0&&<span>{project.blocks.length}</span>}</h2>

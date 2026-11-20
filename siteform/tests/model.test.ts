@@ -142,3 +142,20 @@ test('new projects and untouched legacy demos start empty at the Bradford Street
   const located={...changed,anchor:{lat:51.5,lon:-.12}}
   assert.deepEqual(restoreProject(JSON.stringify(located)),located)
 })
+
+test('homes include an editable estimate from apartment GIA only',()=>{
+  const project={...sample,boundary:[[0,0],[100,0],[100,100],[0,100]] as typeof sample.boundary,blocks:[
+    newBlock(sample,'house',[[0,0],[9,0]]),
+    newBlock(sample,'apartment',[[0,20],[40,20]]),
+    newBlock(sample,'office',[[0,45],[40,45]]),
+    newBlock(sample,'pbsa',[[0,70],[40,70]])
+  ]}
+  const totals=development(project)
+  assert.equal(totals.apartmentAreaPerHome,80)
+  near(totals.giaByUse.apartment!,(40-1.2)*(18-1.2)*4)
+  assert.equal(totals.apartments,32)
+  assert.equal(totals.homes,34)
+  assert.equal(totals.density,34)
+  assert.ok(totals.giaByUse.office!>0&&totals.giaByUse.pbsa!>0&&totals.giaByUse.house!>0)
+  assert.equal(development({...project,apartmentAreaPerHome:100}).homes,28)
+})
