@@ -244,7 +244,6 @@ function App(){
   const shownFloor=Math.min(floor,storyCount-1)
   return <div className="app">
     <header className="topbar">
-      <a className="brand" href="./" aria-label="Siteform home"><span><Icon name="logo" size={22}/></span>Siteform</a>
       <div className="breadcrumbs"><span>Projects</span><Icon name="right" size={13}/><strong>Riverside Quarter</strong></div>
       <div className="top-actions">
         <span className="save"><Icon name={saved?'check':'warning'} size={15}/>{saved?'Saved locally':'Save unavailable'}</span>
@@ -328,10 +327,11 @@ function App(){
               </div>)}
             </div>}</div></div>
           <p>Residential masterplan</p>
-          <div className="summary-grid">
-            <div><span>Site area</span><strong>{format(totals.site/10000,2)} <small>ha</small></strong></div>
-            <div><span>Proposed blocks</span><strong>{project.blocks.length}</strong></div>
+          <div className="summary-grid" aria-live="polite">
+            <div><span>Homes</span><strong>{format(totals.houses)}</strong></div>
+            <div><span>Dwellings per hectare</span><strong>{totals.site ? format(totals.density,1) : '—'} <small>dph</small></strong></div>
           </div>
+          <p className="summary-note">House runs count towards these totals. Apartment layouts are pending.</p>
         </div>
         <div className="block-list">
           <div className="section-label">BUILDINGS <span>{project.blocks.length}</span></div>
@@ -366,15 +366,13 @@ function App(){
         </Panel>}
         <Panel title="Development statistics" icon="chart">
           <dl className="statistics">
-            <div><dt>Site area</dt><dd>{format(totals.site)} m²</dd></div>
+            <div><dt>Site area</dt><dd>{format(totals.site)} m² · {format(totals.site/10000,2)} ha</dd></div>
             <div><dt>External floor area</dt><dd>{format(totals.gross)} m²</dd></div>
             <div><dt>Building footprint</dt><dd>{format(totals.footprint)} m²</dd></div>
             <div><dt>Site coverage</dt><dd>{format(totals.coverage,1)}%</dd></div>
-            <div><dt>Modelled houses</dt><dd>{totals.houses}</dd></div>
-            <div><dt>House density</dt><dd>{format(totals.density,1)} / ha</dd></div>
             <div><dt>Usable house area</dt><dd>{format(totals.usable)} m²</dd></div>
           </dl>
-          <p className="method">External area uses the outside footprint. Usable house area uses internal wall faces. Apartment dwellings are pending.</p>
+          <p className="method">External area uses the outside footprint. Usable house area uses internal wall faces.</p>
         </Panel>
         <Panel title="Warnings" icon="warning" count={warnings.length}>
           <div className="warnings">{warnings.length?warnings.map(w=><p key={w}><Icon name="warning" size={14}/>{w}</p>):<p><Icon name="check" size={14}/>All blocks within the site boundary.</p>}</div>

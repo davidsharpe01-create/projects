@@ -60,3 +60,18 @@ test('Mercator tile frame and local-metre origin agree',()=>{
   near((shifted.x-frame.x)*frame.width,10)
   assert.ok(mapFrame(geographicPoint(anchor,0,10),zoom).y>frame.y)
 })
+
+test('homes and density update when frontage or site area changes',()=>{
+  const block=newBlock(sample,'house',[[0,0],[45,0]])
+  const project={...sample,boundary:[[0,0],[100,0],[100,100],[0,100]] as typeof sample.boundary,blocks:[block]}
+  assert.equal(development(project).houses,10)
+  assert.equal(development(project).density,10)
+
+  const edited={...project,blocks:[{...block,line:[[0,0],[54,0]] as typeof block.line}]}
+  assert.equal(development(edited).houses,12)
+  assert.equal(development(edited).density,12)
+
+  const larger={...edited,boundary:[[0,0],[200,0],[200,100],[0,100]] as typeof project.boundary}
+  assert.equal(development(larger).houses,12)
+  assert.equal(development(larger).density,6)
+})

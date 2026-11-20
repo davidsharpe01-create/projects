@@ -1,6 +1,5 @@
 const icons:Record<string,string>={
   cube:'M12 2 3 7v10l9 5 9-5V7l-9-5ZM3 7l9 5 9-5m-9 5v10',
-  logo:'m3 8 9-5 9 5-9 5-9-5Zm0 4 9 5 9-5M3 16l9 5 9-5',
   mouse:'m5 3 15 9-7 1-3 7L5 3Z',
   boundary:'M6 4h12M4 6v12m16-12v12M6 20h12M2 2h4v4H2zm16 0h4v4h-4ZM2 18h4v4H2zm16 0h4v4h-4z',
   house:'m3 11 9-7 9 7m-2-2v11H5V9m5 11v-6h4v6',
