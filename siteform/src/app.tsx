@@ -82,7 +82,7 @@ function App(){
   const [draft,setDraft]=useState<Point[]>([])
   const [pointer,setPointer]=useState<Point|null>(null)
   const [preview,setPreview]=useState<Project|null>(null)
-  const [menu,setMenu]=useState<'layers'|'settings'|'export'|'help'|'location'|'draw'|'tools'|null>(null)
+  const [menu,setMenu]=useState<'layers'|'export'|'help'|'location'|'draw'|'tools'|null>(null)
   const [latitude,setLatitude]=useState(String(project.anchor?.lat??defaultAddress.anchor.lat))
   const [longitude,setLongitude]=useState(String(project.anchor?.lon??defaultAddress.anchor.lon))
   const [notice,setNotice]=useState('')
@@ -572,18 +572,7 @@ function App(){
       </section>
       <aside className="sidebar" aria-label="Project inspector">
         <div className="overview">
-          <div className="heading"><h1>Overview</h1><div className="menu-anchor"><Button icon="settings" title="Project settings" kind="square settings" active={menu==='settings'} onClick={()=>setOption('settings')}/>
-            {menu==='settings'&&<div className="popover settings-menu">
-              <strong>House defaults</strong>
-              {(['3B5P','3B6P'] as const).map(t=><div className="settings-row" key={t}>
-                <NumberField label={t+' target area'} value={project.targets[t]} min={60} max={220} step={.1} unit="m²" update={v=>{
-                  const targets={...project.targets,[t]:v}
-                  if(project.blocks.every(b=>footprintSatisfies(b,targets)))commit({...project,targets})
-                  else setNotice('That target creates overlapping house footprints.')
-                }}/>
-                <input type="color" aria-label={t+' colour'} value={project.colours[t]} onChange={e=>commit({...project,colours:{...project.colours,[t]:e.target.value}})}/>
-              </div>)}
-            </div>}</div></div>
+          <div className="heading"><h1>Overview</h1></div>
           <div className="summary-grid" aria-live="polite">
             <div><span>Homes</span><strong>{totals.homes===null?'—':format(totals.homes)}</strong></div>
             <div><span title="Dwellings per hectare">Density</span><strong>{totals.site&&totals.density!==null?format(totals.density,1):'—'} <small>dph</small></strong></div>
@@ -659,8 +648,9 @@ function App(){
             </div>
           </div>
         </Panel>}
-        <Panel title="Dwelling mix and standards" icon="settings" initial={false}>
-          <div className="properties dwelling-settings">
+        <Panel title="Dwelling types" icon="settings" initial={false}>
+          <section className="properties dwelling-settings" aria-labelledby="apartment-types">
+            <h3 id="apartment-types">Apartment types</h3>
             <div className="property-grid">
               <NumberField label="Clear corridor width" value={settings.corridor} min={1} step={.1} update={corridor=>commit({...project,apartmentSettings:{...settings,corridor}})}/>
               <NumberField label="Corridor route allowance" value={settings.travel} min={1} step={.1} update={travel=>commit({...project,apartmentSettings:{...settings,travel}})}/>
@@ -676,18 +666,31 @@ function App(){
                   onChange={e=>commit({...project,apartmentSettings:{...settings,colours:{...settings.colours,[type]:e.target.value}}})}/>{type}
               </label></th>
                 <td><NumberField label={type+' mix'} value={settings.mix[type]} min={0} max={100} unit="%" update={value=>commit({...project,apartmentSettings:{...settings,mix:{...settings.mix,[type]:value}}})}/></td>
-                <td><NumberField label={type+' target'} value={areaTarget(type,project)} min={ndss[type].areas[0]} step={.1} unit="m²" update={value=>{
-                  if(type==='3B5P'||type==='3B6P'){
-                    const targets={...project.targets,[type]:value}
-                    if(project.blocks.every(b=>footprintSatisfies(b,targets)))commit({...project,targets})
-                    else setNotice('That target creates overlapping house footprints.')
-                  }else commit({...project,apartmentSettings:{...settings,targets:{...settings.targets,[type]:value}}})
-                }}/></td><td>{totals.mix[type]}{totals.houses+totals.generatedApartments>0&&<small> {format(100*totals.mix[type]/(totals.houses+totals.generatedApartments),0)}%</small>}</td></tr>)}</tbody>
+                <td>{type==='3B5P'||type==='3B6P'?<span>{format(areaTarget(type,project),1)} m²</span>:
+                  <NumberField label={type+' apartment target area'} value={areaTarget(type,project)} min={ndss[type].areas[0]} step={.1} unit="m²" update={value=>
+                    commit({...project,apartmentSettings:{...settings,targets:{...settings.targets,[type]:value}}})}/>}
+                </td><td>{totals.apartmentMix[type]}{totals.generatedApartments>0&&<small> {format(100*(totals.apartmentMix[type])/totals.generatedApartments,0)}%</small>}</td></tr>)}</tbody>
             </table>
-            <p className="summary-note">Actual mix counts houses and subdivided apartments. Mix edits apply to new subdivisions. Apply them to existing blocks when ready.</p>
+            <p className="summary-note">Actual mix counts subdivided apartments. Mix edits apply to new subdivisions. Apply them to existing blocks when ready.</p>
             <button type="button" className="secondary" disabled={!totals.generatedApartments} onClick={()=>commit({...project,blocks:project.blocks.map(b=>b.apartmentLayout?{...b,apartmentLayout:{...b.apartmentLayout,mix:{...settings.mix}}}:b)})}>Apply target mix to all subdivisions</button>
             <p className="summary-note">{ndssVersion}. Area and route checks are indicative. Room dimensions and storage are pending.</p>
-          </div>
+          </section>
+          <section className="properties dwelling-settings" aria-labelledby="house-types">
+            <h3 id="house-types">House types</h3>
+            <table className="mix-table"><thead><tr><th>Type</th><th>Target area</th><th>Actual</th></tr></thead>
+              <tbody>{(['3B5P','3B6P'] as const).map(type=><tr key={type}><th scope="row"><label className="dwelling-colour">
+                <input type="color" aria-label={type+' house colour'} value={project.colours[type]}
+                  onChange={e=>commit({...project,colours:{...project.colours,[type]:e.target.value}})}/>{type}
+              </label></th>
+                <td><NumberField label={type+' house target area'} value={project.targets[type]} min={60} max={220} step={.1} unit="m²" update={value=>{
+                  const targets={...project.targets,[type]:value}
+                  if(project.blocks.every(b=>footprintSatisfies(b,targets)))return commit({...project,targets})
+                  setNotice('That target creates overlapping house footprints.')
+                  return false
+                }}/></td><td>{totals.houseMix[type]}</td></tr>)}</tbody>
+            </table>
+            <p className="summary-note">3B5P and 3B6P area targets are shared with apartments. The apartment targets also respect their space-standard minimums.</p>
+          </section>
         </Panel>
         <Panel title="Site statistics" icon="chart" initial={false}>
           <dl className="statistics">

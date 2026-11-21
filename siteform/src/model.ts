@@ -193,11 +193,16 @@ export function development(p:Project) {
   const site=area(p.boundary)
   const giaByUse:Record<BlockType,number|null>={house:0,apartment:0,office:0,pbsa:0}
   const mix=Object.fromEntries(dwellingTypes.map(type=>[type,0])) as Record<DwellingType,number>
+  const apartmentMix={...mix}
+  const houseMix:Record<HouseType,number>={'3B5P':0,'3B6P':0}
   let generatedApartments=0,estimatedGia:number|null=0
   let targetAchieving=0,generatedUsable=0,coreArea=0,corridorArea=0
   const totals=p.blocks.reduce((total,b)=>{
     const s=blockStats(b,p)
-    if(b.type==='house')mix[b.houseType]+=s.houses
+    if(b.type==='house'){
+      mix[b.houseType]+=s.houses
+      houseMix[b.houseType]+=s.houses
+    }
     if(b.type==='apartment'){
       const layout=apartmentLayout(b,p)
       if(layout?.ok){
@@ -207,6 +212,7 @@ export function development(p:Project) {
           f.units.forEach(unit=>{
             generatedApartments++
             mix[unit.type]++
+            apartmentMix[unit.type]++
             generatedUsable+=unit.area
             if(unit.area+1e-7>=unit.target)targetAchieving++
           })
@@ -224,7 +230,7 @@ export function development(p:Project) {
   const estimatedApartments=estimatedGia===null?null:Math.floor(estimatedGia/apartmentAreaPerHome)
   const apartments=estimatedApartments===null?null:generatedApartments+estimatedApartments
   const homes=apartments===null?null:totals.houses+apartments
-  return {...totals,giaByUse,apartmentAreaPerHome,estimatedApartments,generatedApartments,apartments,homes,site,mix,targetAchieving,generatedUsable,coreArea,corridorArea,
+  return {...totals,giaByUse,apartmentAreaPerHome,estimatedApartments,generatedApartments,apartments,homes,site,mix,apartmentMix,houseMix,targetAchieving,generatedUsable,coreArea,corridorArea,
     density:homes===null?null:site?homes*10000/site:0,coverage:site?totals.footprint/site*100:0}
 }
 export function newBlock(project:Project,type:Block['type'],line:Point[]):Block {
