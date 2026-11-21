@@ -37,6 +37,7 @@ a { color: inherit; text-underline-offset: 3px }
 .tool svg:last-child:not(:first-child) { width: 12px; height: 12px }
 .tool:hover, .square:hover, .layer-button:hover { background: var(--paper) }
 .tool.active, .square.active, .layer-button.active { background: #fae0d3; color: #66280f }
+.tool.building-tool.active { background: #e4eff8; color: #235b88 }
 .desktop-tools { display: none }
 .tool-divider { border-left: 1px solid var(--line); padding-left: 8px }
 .history { gap: 0 }
@@ -87,7 +88,7 @@ h1 { margin: 0; font-size: 34px; font-weight: 500; letter-spacing: -.055em; line
 .section-label span, .panel-toggle em { color: var(--muted); font-weight: 400; font-size: 11px; font-style: normal }
 .block-row { width: 100%; min-height: 46px; padding: 6px 5px; justify-content: start; text-align: left; gap: 9px }
 .block-row:hover { background: var(--paper) }
-.block-row.selected { box-shadow: inset 2px 0 var(--accent); background: #fbebe3 }
+.block-row.selected { box-shadow: inset 2px 0 #235b88; background: #e4eff8 }
 .block-icon { width: 25px; height: 26px; display: grid; place-items: center; flex-shrink: 0 }
 .block-name { display: grid; gap: 2px; margin-right: auto }
 .block-name strong { font-size: 13px; font-weight: 600 }
@@ -203,3 +204,5 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
 .apartment-key span { display: flex; align-items: center; gap: 4px }
 .apartment-key i { width: 9px; height: 9px; border: 1px solid #766e62 }
 .apartment-key + .context-status { top: 89px }
+
+.setback-picker.editing select { border-color: #235b88; color: #235b88 }

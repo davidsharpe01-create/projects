@@ -5,6 +5,7 @@ import type {SnapGuide} from './snap'
 import {roadWidths,type ContextData} from './context'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
 import { footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
+const editingBlue='#235b88'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
 export type Layers = {context:boolean; streets:boolean; hrb:boolean; travel:boolean; grid:boolean; labels:boolean}
@@ -22,7 +23,7 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
   return {project,invert,s,depth}
 }
-type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; drafting?:boolean; context:ContextData; ghosted:ReadonlySet<number>}
+type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; drawBuilding:boolean; editBoundary:boolean; drafting?:boolean; context:ContextData; ghosted:ReadonlySet<number>}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
@@ -167,15 +168,15 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     const validLayout=layout?.ok?layout:undefined
     const material=!plan&&layers.hrb&&validLayout?.hrb
       ?{roof:'#e2aec2',walls:['#c891a8','#ac7890','#c188a2','#d1a1b5'],line:'#894864',floor:'#f5dce6'}
-      :b.type==='house'?{...house,roof,line:b.id===selected?'#286957':house.line}:
-      b.id===selected&&b.type==='apartment'?{roof:'#b7d7ca',walls:['#81ab9b','#568675','#6e9b8c','#9bc1b3'],line:'#286957',floor:'#d5e7df'}:
-      bulk[b.type]
+      :b.type==='house'?{...house,roof,line:b.id===selected?editingBlue:house.line}:
+      b.id===selected&&b.type==='apartment'?{roof:'#bbd4e9',walls:['#8aaecb','#648bae','#779dbd','#9ab9d1'],line:editingBlue,floor:'#dceaf5'}:
+      b.id===selected?{...bulk[b.type],line:editingBlue}:bulk[b.type]
     let group=polys.flat()
     if(b.type!=='house'&&polys[0]){
       const heights=levels(b)
       if(plan){
         const poly=floorOutline(b,polys[0],floor)
-        face(poly,0,material,[],b.id,0,undefined,true,true,[],undefined,undefined,false,validLayout?.floors[floor])
+        face(poly,0,b.id===selected&&editFloor?{...material,line:editingBlue}:material,[],b.id,0,undefined,true,true,[],undefined,undefined,false,validLayout?.floors[floor])
         group=poly
       }else{
         heights.forEach((top,i)=>{
@@ -280,11 +281,11 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.font='600 11px system-ui'
     const width=ctx.measureText(name).width+21
     ctx.beginPath();ctx.roundRect(x-width/2,y-11,width,22,5)
-    ctx.fillStyle=chosen?'#206751':'#fdfcf8';ctx.fill()
-    ctx.fillStyle=chosen?'#fff':'#35574c';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,x,y+.5)
+    ctx.fillStyle=chosen?editingBlue:'#fdfcf8';ctx.fill()
+    ctx.fillStyle=chosen?'#fff':'#354f63';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,x,y+.5)
   })
   if(heightHandle){
-    const [x,y]=heightHandle,colour='#176f59'
+    const [x,y]=heightHandle,colour=editingBlue
     dot(heightHandle,colour,8)
     path([[x,y-4.5],[x,y+4.5]],undefined,colour,1.4,false)
     path([[x-2.5,y-2],[x,y-4.5],[x+2.5,y-2]],undefined,colour,1.4,false)
@@ -292,31 +293,32 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   }
   const block=editFrontage?project.blocks.find(b=>b.id===selected && (!plan||floor<floors(b))):undefined
   const setbackHandles:Point[]=[]
-  if(block&&block.type!=='house'&&!plan&&editFloor>0&&editFloor<block.floors){
+  if(block&&block.type!=='house'&&editFloor>0&&editFloor<block.floors){
     const outline=footprints(block,project.targets)[0]
     if(outline){
       const poly=floorOutline(block,outline,editFloor)
       const heights=levels(block)
-      const elevation=block.level+(heights[editFloor-1]+heights[editFloor])/2
+      const elevation=plan?0:block.level+(heights[editFloor-1]+heights[editFloor])/2
       const lastFront=poly.length/2-1
       const front=poly.slice(0,lastFront+1).map(p=>xy(p,elevation))
-      path(front,undefined,'#215a7b',2,false)
+      path(front,undefined,editingBlue,2,false)
       setbackHandles.push(front[0],front[lastFront])
-      setbackHandles.forEach(p=>dot(p,'#215a7b',6.5))
+      setbackHandles.forEach(p=>dot(p,editingBlue,6.5))
     }
   }
-  const handles=block&&(!(plan?floor:editFloor)||block.type==='house')
+  const handles=block&&(!editFloor||block.type==='house')
     ?block.line.map(p=>xy(p,plan?0:block.level))
     :editBoundary?boundary.map(p=>xy(p)):[]
-  if(block)path(handles,undefined,'#176f59',2,false)
-  handles.forEach(p=>dot(p,block?'#176f59':'#aa5049',5.5))
+  if(block)path(handles,undefined,editingBlue,2,false)
+  handles.forEach(p=>dot(p,block?editingBlue:'#aa5049',5.5))
   if(draft.length){
-    world(draft,undefined,'#a14a42',2,false)
-    if(pointer){ctx.setLineDash([5,5]);world([draft.at(-1)!,pointer],undefined,'#a14a42',1.6,false);ctx.setLineDash([])}
-    draft.forEach(p=>dot(xy(p),'#aa5049',4.2))
+    const colour=scene.drawBuilding?editingBlue:'#a14a42'
+    world(draft,undefined,colour,2,false)
+    if(pointer){ctx.setLineDash([5,5]);world([draft.at(-1)!,pointer],undefined,colour,1.6,false);ctx.setLineDash([])}
+    draft.forEach(p=>dot(xy(p),colour,4.2))
   }
   if(guide){
-    const colour='#6953a2'
+    const colour=block||scene.drawBuilding?editingBlue:'#6953a2'
     const level=guide.level??0
     ctx.setLineDash([4,4])
     world([guide.edge.a,guide.edge.b],undefined,colour,2,false,level)

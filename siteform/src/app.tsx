@@ -128,7 +128,7 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,ghosted,drafting:!!preview})
+    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,ghosted,drafting:!!preview})
   },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,ghosted])
   function commit(next:Project,trimUpper=false){
     for(const block of next.blocks){
@@ -150,10 +150,11 @@ function App(){
   function redo(){setHistory(h=>h.future.length?{past:[...h.past,h.current],current:h.future[0],future:h.future.slice(1)}:h)}
   function choose(next:Tool){
     setDraft([]);setGuide(undefined);setNotice('');setTool(next);setMenu(null)
+    if(next!=='select')setEditFloor(0)
     if(next==='measure'||next==='vertices')setPlan(true)
     if(next==='boundary'||isBuildingTool(next)||next==='measure'||next==='vertices')setFloor(0)
   }
-  function switchView(next:boolean){setPlan(next);if(!next)setFloor(0);if(draft.length||tool==='vertices')choose('select')}
+  function switchView(next:boolean){setPlan(next);setFloor(next?selectedFloor:0);if(draft.length||tool==='vertices')choose('select')}
   function setOption(next:typeof menu){setMenu(m=>m===next?null:next)}
   function updateBlock(block:Block){
     if(!footprintSatisfies(block,project.targets)){setNotice('The frontage and depth must create a valid footprint.');return false}
@@ -287,7 +288,7 @@ function App(){
       const updated=adjustSetback(block,d.project.targets,d.floor,d.vertex,delta,match?0:step)
       const applied=endInset(updated,d.floor)[d.vertex]-inset
       const heights=levels(block)
-      const level=block.level+(heights[d.floor-1]+heights[d.floor])/2
+      const level=plan?0:block.level+(heights[d.floor-1]+heights[d.floor])/2
       setGuide(match&&Math.abs(applied-delta)<1e-6?{...match.guide,level}:undefined)
       setPreview({...d.project,blocks:d.project.blocks.map(b=>b===block?updated:b)})
       return
@@ -360,6 +361,7 @@ function App(){
       return
     }
     if(e.button!==0||d.navigation)return
+    if(tool==='select')drawingClick.current=d.screen
     if(d.action==='vertices'||d.action==='setback')return
     if(d.action==='height'&&!scene.current.pick(d.screen))return
     if(tool==='ghost'||tool==='show'){
@@ -375,8 +377,10 @@ function App(){
     }
     if(tool==='vertices'){choose('select');setSelection(null);return}
     if(tool==='select'){
-      setSelection(scene.current.pick(d.screen))
-      setEditFloor(plan?0:scene.current.pickFloor(d.screen))
+      const hit=scene.current.pick(d.screen)
+      setSelection(hit)
+      if(!hit||hit!==selection)setEditFloor(0)
+      else if(selectedFloor&&!plan)setEditFloor(Math.max(1,scene.current.pickFloor(d.screen)))
       return
     }
     if(drawTool)drawingClick.current=d.screen
@@ -390,10 +394,25 @@ function App(){
     setDraft([...draft,point])
     setPointer(null)
   }
-  function clickDrawing(e:MouseEvent<HTMLCanvasElement>){
+  function chooseFloor(next:number){
+    setEditFloor(next)
+    if(plan)setFloor(next)
+  }
+  function enterBuilding(id:string|null,hitFloor:number){
+    const block=project.blocks.find(b=>b.id===id)
+    if(!block||block.type==='house'||block.floors<2)return
+    setSelection(block.id)
+    chooseFloor(Math.min(block.floors-1,Math.max(1,hitFloor)))
+  }
+  function clickCanvas(e:MouseEvent<HTMLCanvasElement>){
     const screen=drawingClick.current
     drawingClick.current=null
-    if(!screen||!drawTool)return
+    if(!screen)return
+    if(tool==='select'&&e.detail===2){
+      enterBuilding(scene.current.pick(screen)??(scene.current.handles.some(p=>length(p,screen)<12)?selection:null),plan?shownFloor:scene.current.pickFloor(screen))
+      return
+    }
+    if(!drawTool)return
     // The first click already placed the final vertex.
     if(e.detail===2)finish()
     else if(e.detail<2)placePoint(screen)
@@ -485,9 +504,9 @@ function App(){
     </header>
     <section className="toolbar" aria-label="Design tools">
       <div className="toolset">
-        {tools.slice(0,2).map(t=><Button key={t.id} icon={t.icon} kind="tool" title={t.name} active={tool===t.id||(t.id==='boundary'&&tool==='vertices')} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>)}
+        {tools.slice(0,2).map(t=><Button key={t.id} icon={t.icon} kind={t.id==="boundary"||t.id==="measure"?"tool":"tool building-tool"} title={t.name} active={tool===t.id||(t.id==='boundary'&&tool==='vertices')} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>)}
         <div className="menu-anchor compact-tools">
-          <Button icon="building" kind="tool" title="Draw building" active={isBuildingTool(tool)} onClick={()=>setOption('draw')}>
+          <Button icon="building" kind="tool building-tool" title="Draw building" active={isBuildingTool(tool)} onClick={()=>setOption('draw')}>
             <span>{isBuildingTool(tool)?tools.find(t=>t.id===tool)?.name:'Draw building'}</span><Icon name="chevron" size={13}/>
           </Button>
           {menu==='draw'&&<div className="popover tool-menu">
@@ -495,14 +514,14 @@ function App(){
           </div>}
         </div>
         <div className="menu-anchor compact-tools">
-          <Button icon="settings" kind="tool" title="Edit tools" active={['move','rotate','measure'].includes(tool)} onClick={()=>setOption('tools')}><span>Tools</span><Icon name="chevron" size={13}/></Button>
+          <Button icon="settings" kind="tool building-tool" title="Edit tools" active={['move','rotate','measure'].includes(tool)} onClick={()=>setOption('tools')}><span>Tools</span><Icon name="chevron" size={13}/></Button>
           {menu==='tools'&&<div className="popover tool-menu">
             {tools.filter(t=>['move','rotate','measure'].includes(t.id)).map(t=><Button key={t.id} icon={t.icon} kind="menu-tool" onClick={()=>choose(t.id)}>{t.name}</Button>)}
           </div>}
         </div>
         <div className="desktop-tools">
           {tools.slice(2).map(t=><div key={t.id} className={t.id==='move'?'tool-divider':undefined}>
-            <Button icon={t.icon} kind="tool" title={t.name} active={tool===t.id} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>
+            <Button icon={t.icon} kind={t.id==="boundary"||t.id==="measure"?"tool":"tool building-tool"} title={t.name} active={tool===t.id} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>
           </div>)}
         </div>
         <Button icon="ghost" kind="tool ghost-tool" title="Ghost existing buildings" active={tool==='ghost'}
@@ -530,7 +549,7 @@ function App(){
     <main>
       <section className="workspace" aria-label="Site workspace">
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
-          onPointerDown={start} onPointerMove={move} onPointerUp={end} onClick={clickDrawing} onPointerCancel={()=>{drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
+          onPointerDown={start} onPointerMove={move} onPointerUp={end} onClick={clickCanvas} onPointerCancel={()=>{drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
           onAuxClick={e=>{if(e.button===1)e.preventDefault()}} onContextMenu={e=>e.preventDefault()}/>
         <div className="map-right">
           <button className="compass" type="button" title="Reset view to north" onClick={()=>setCamera({...home,angle:0})}>
@@ -542,7 +561,7 @@ function App(){
             <Button icon="target" title="Fit model" onClick={fitModel}/>
           </div>
         </div>
-        {plan&&<label className="floor-picker">Floor <select value={shownFloor} onChange={e=>setFloor(Number(e.target.value))}>
+        {plan&&<label className="floor-picker">Floor <select value={shownFloor} onChange={e=>{const next=Number(e.target.value);setFloor(next);if(selectedFloor)setEditFloor(Math.min(next,(selected?.floors??1)-1))}}>
           {Array.from({length:storyCount},(_,i)=><option value={i} key={i}>{i===0?'Ground':i}</option>)}</select></label>}
         {actions[tool]&&<div className="draw-message">
           <span>{tool==='measure'&&draft.length===2?format(length(...draft as [Point,Point]),2)+' m':actions[tool]}</span>
@@ -600,7 +619,7 @@ function App(){
         </div>
         <div className="block-list">
           <h2 className="section-label">Buildings{project.blocks.length>0&&<span>{project.blocks.length}</span>}</h2>
-          {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');setSelection(b.id);setFloor(0);setEditFloor(0)}}>
+          {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');setSelection(b.id);setFloor(0);setEditFloor(0)}} onDoubleClick={()=>enterBuilding(b.id,1)}>
             <span className={'block-icon '+b.type}><Icon name={b.type==='apartment'?'building':b.type} size={16}/></span>
             <span className="block-name"><strong>{b.name}</strong><small>{blockTypes[b.type].label}{higherRiskBlocks.has(b.id)?' (HRB)':''}</small></span>
             <span className="storeys">{floors(b)}F</span><Icon name="right" size={13}/>
@@ -622,9 +641,9 @@ function App(){
               <NumberField label="Ground level" value={selected.level} min={-30} max={60} step={.1} update={level=>updateBlock({...selected,level})}/>
               <div className="readout"><span>Frontage length</span><strong>{format(frontage(selected.line),1)} m</strong></div>
             </div>
-            {!plan&&tool==='select'&&selected.type!=='house'&&selected.floors>1&&
-              <label className="field setback-picker"><span>Setback floor</span>
-                <select value={selectedFloor} onChange={e=>setEditFloor(Number(e.target.value))}>
+            {tool==='select'&&selected.type!=='house'&&selected.floors>1&&
+              <label className={'field setback-picker'+(selectedFloor?' editing':'')}><span>Setback floor</span>
+                <select value={selectedFloor} onChange={e=>chooseFloor(Number(e.target.value))}>
                   {Array.from({length:selected.floors},(_,i)=><option key={i} value={i}>{i===0?'Ground':`Floor ${i}`}</option>)}
                 </select>
               </label>}
@@ -648,7 +667,7 @@ function App(){
               </>:<button type="button" className="primary" onClick={()=>subdivide(selected)}>Subdivide into apartments</button>}
             </div>}
             <div className="property-actions">
-              {tool==='select'&&<span className="vertex-hint">{!plan&&selected.type!=='house'?(selectedFloor?'Drag either blue end handle':'Select an upper floor for setbacks'):'Drag frontage handles to edit'}</span>}
+              {tool==='select'&&<span className="vertex-hint">{selectedFloor?'Drag either end to set back this floor and above':selected.type!=='house'&&selected.floors>1?'Drag ground handles or double-click the block to edit floors':'Drag frontage handles to edit'}</span>}
               <Button icon="copy" kind="square" title="Duplicate block" onClick={()=>duplicate(selected)}/>
               <Button icon="trash" kind="square" title="Delete block" onClick={remove}/>
             </div>
@@ -727,7 +746,7 @@ function App(){
       <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Right-drag or middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold middle and left together to pan while editing. In Plan, middle-drag pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select it. Drag its frontage handles or drag a selected apartment roof to change its storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Right-drag or middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold middle and left together to pan while editing. In Plan, middle-drag pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select its ground spline. Double-click to enter floor editing, then pick an upper floor and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
