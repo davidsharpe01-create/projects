@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
-import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
+import { blockTypes, blockStoreys, adjustSetback, editGroundFrontage, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadAerial,mapboxToken,type AerialTile} from './aerial'
@@ -366,7 +366,7 @@ function App(){
       const result=snap?snapPoint(raw,references,toScreen,anchors):{point:raw,guide:undefined}
       setGuide(result.guide&&{...result.guide,level})
       const updated=line.map((p,i)=>i===d.vertex?result.point:p)
-      setPreview(block?{...d.project,blocks:d.project.blocks.map(b=>b===block?{...b,line:updated}:b)}:{...d.project,boundary:updated})
+      setPreview(block?{...d.project,blocks:d.project.blocks.map(b=>b===block?editGroundFrontage(b,updated):b)}:{...d.project,boundary:updated})
       return
     }
     if(!block)return

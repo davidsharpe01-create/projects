@@ -114,6 +114,26 @@ export function endDirection(block:Block,end:number):Point {
   const [x,y]=minus(next,origin),size=Math.hypot(x,y)
   return [x/size,y/size]
 }
+export function editGroundFrontage(block:Block,line:Point[]):Block {
+  const updated={...block,line}
+  if(block.type==='house'||block.floors<2)return updated
+  const sides=[0,1].map(side=>{
+    const oldEnd=side?block.line.at(-1)!:block.line[0]
+    const newEnd=side?line.at(-1)!:line[0]
+    const oldDirection=endDirection(block,side),direction=endDirection(updated,side)
+    const [dx,dy]=minus(oldEnd,newEnd)
+    return {shift:dx*direction[0]+dy*direction[1],
+      alignment:oldDirection[0]*direction[0]+oldDirection[1]*direction[1]}
+  })
+  const setbacks=levels(block).map((_,floor):Point=>{
+    if(!floor)return [0,0]
+    return sides.map(({shift,alignment},side)=>{
+      const inset=Math.max(0,shift+alignment*endInset(block,floor)[side])
+      return inset<1e-7?0:inset
+    }) as Point
+  })
+  return block.setbacks||setbacks.some(([a,b])=>a||b)?{...updated,setbacks}:updated
+}
 export function floorOutline(block:Block,outline:Point[],floor:number):Point[] {
   const [start,end]=endInset(block,floor)
   if(!start&&!end)return outline

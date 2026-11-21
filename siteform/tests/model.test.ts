@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { adjustSetback, endInset, floorOutline, resizeStoreys, area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, levels, meetsDwellingCeiling, length, newBlock, validPolygon } from '../src/model.ts'
+import { adjustSetback, editGroundFrontage, endInset, floorOutline, resizeStoreys, area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, levels, meetsDwellingCeiling, length, newBlock, validPolygon } from '../src/model.ts'
 import { legacySample as sample, blankProject, restoreProject } from '../src/project.ts'
 import { geographicPoint, mapFrame } from '../src/geography.ts'
 const near=(a:number,b:number)=>assert.ok(Math.abs(a-b)<1e-7,`${a} ≠ ${b}`)
@@ -192,4 +192,20 @@ test('a dragged setback only moves upper floors when it passes their existing of
   assert.deepEqual(offsets(drag(4)),[[2,1],[10,3],[10,4],[14,6]])
   assert.deepEqual(offsets(drag(6)),[[2,1],[12,3],[12,4],[14,6]])
   assert.deepEqual(offsets(drag(-20)),[[2,1],[2,3],[10,4],[14,6]])
+})
+
+test('ground frontage edits preserve upper end positions until the ground edge reaches them',()=>{
+  const block={...newBlock(sample,'apartment',[[0,0],[50,0]]),floors:4,
+    setbacks:[[0,0],[3,2],[6,5],[9,8]] as [number,number][]}
+  const edges=(line:Parameters<typeof editGroundFrontage>[1])=>{
+    const edited=editGroundFrontage(block,line)
+    assert.ok(footprintSatisfies(edited,sample.targets))
+    const outline=footprints(edited,sample.targets)[0]
+    return [1,2,3].map(floor=>floorOutline(edited,outline,floor).slice(0,2).map(([x])=>x))
+  }
+  assert.deepEqual(edges([[2,0],[50,0]]),[[3,48],[6,45],[9,42]])
+  assert.deepEqual(edges([[7,0],[44,0]]),[[7,44],[7,44],[9,42]])
+  assert.deepEqual(edges([[-5,0],[54,0]]),[[3,48],[6,45],[9,42]])
+  const flush=newBlock(sample,'apartment',[[0,0],[50,0]])
+  assert.deepEqual(endInset(editGroundFrontage(flush,[[-5,0],[54,0]]),1),[5,4])
 })
