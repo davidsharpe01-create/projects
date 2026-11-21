@@ -209,3 +209,13 @@ test('ground frontage edits preserve upper end positions until the ground edge r
   const flush=newBlock(sample,'apartment',[[0,0],[50,0]])
   assert.deepEqual(endInset(editGroundFrontage(flush,[[-5,0],[54,0]]),1),[5,4])
 })
+
+test('aligned upper floor edges follow an upper setback drag in both directions',()=>{
+  const block={...newBlock(sample,'apartment',[[0,0],[50,0]]),floors:6,
+    setbacks:[[0,0],[2,1],[6,3],[6,4],[6,6],[10,7]] as [number,number][]}
+  const offsets=(delta:number)=>adjustSetback(block,sample.targets,2,0,delta,.5).setbacks
+  assert.deepEqual(offsets(-2),[[0,0],[2,1],[4,3],[4,4],[4,6],[10,7]])
+  assert.deepEqual(offsets(-20),[[0,0],[2,1],[2,3],[2,4],[2,6],[10,7]])
+  assert.deepEqual(offsets(2),[[0,0],[2,1],[8,3],[8,4],[8,6],[10,7]])
+  assert.deepEqual(offsets(5),[[0,0],[2,1],[11,3],[11,4],[11,6],[11,7]])
+})
