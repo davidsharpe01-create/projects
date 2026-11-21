@@ -293,9 +293,8 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     const cornerUnits:ApartmentBayUnit[]=[]
     for(const bend of bends){
       const vertex=stations.indexOf(bend.x)
-      const [ax,ay]=directions[vertex-1],[bx,by]=directions[vertex]
       const bay=bays.find(bay=>bay.side!==bend.side)
-      if(!bay||Math.abs(ax*bx+ay*by)>.035)continue
+      if(!bay)continue
       const outer=bay.side==='front'?bay.y[0]:bay.y[1]
       const edge=bay.side==='front'?corridorY[0]:corridorY[1]
       const target=areaTarget('2B4P',project)

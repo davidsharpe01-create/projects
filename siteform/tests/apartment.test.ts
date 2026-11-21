@@ -187,7 +187,20 @@ test('party walls are perpendicular to the local façade on both sides of an obl
   assert.ok(answer.ok)
   const directions=[[48,16],[-18,44]]
   const counts=[0,0]
-  for(const {outline:[a,b,c,d]} of answer.floors[0].units){
+  const [ground,upper]=answer.floors
+  const wrapped=ground.units.filter(unit=>unit.outline.length===6)
+  assert.equal(wrapped.length,1)
+  const corner=wrapped[0]
+  assert.deepEqual(upper.units.find(unit=>unit.outline.length===6)?.outline,corner.outline)
+  const [a,b,c,d,e,f]=corner.outline
+  const dot=(p:Block['line'][number],q:Block['line'][number],[x,y]:number[])=>(q[0]-p[0])*x+(q[1]-p[1])*y
+  assert.ok(Math.abs(dot(a,f,directions[0]))<1e-7)
+  assert.ok(Math.abs(dot(c,d,directions[1]))<1e-7)
+  const firstLength=Math.hypot(...directions[0])
+  const depth=(p:Block['line'][number])=>(p[1]*directions[0][0]-p[0]*directions[0][1])/firstLength
+  assert.ok(Math.abs(depth(b)-.6)<1e-7)
+  assert.ok(Math.abs(depth(e)-7.95)<1e-7)
+  for(const {outline:[a,b,c,d]} of ground.units.filter(unit=>unit.outline.length===4)){
     const wing=directions.findIndex(([x,y])=>Math.abs((b[0]-a[0])*y-(b[1]-a[1])*x)<1e-7)
     assert.ok(wing>=0)
     const [x,y]=directions[wing]
