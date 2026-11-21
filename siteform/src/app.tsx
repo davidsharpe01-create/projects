@@ -342,7 +342,9 @@ function App(){
       const match=snap?snapAlong(start,direction,movement,setbackEdges.filter(edge=>edge.block!==block.id),toScreen):undefined
       const delta=match?.movement??(step?Math.round(movement/step)*step:movement)
       const updated=adjustSetback(block,d.project.targets,d.floor,d.vertex,delta,match?0:step)
-      const applied=endInset(updated,d.floor)[d.vertex]-inset
+      const updatedOrigin=d.vertex?updated.line.at(-1)!:updated.line[0]
+      const [dx,dy]=pointDiff(updatedOrigin,origin)
+      const applied=dx*direction[0]+dy*direction[1]+endInset(updated,d.floor)[d.vertex]-inset
       const heights=levels(block)
       const level=plan?0:block.level+(stackView?heights[d.floor]:(heights[d.floor-1]+heights[d.floor])/2)
       setGuide(match&&Math.abs(applied-delta)<1e-6?{...match.guide,level}:undefined)

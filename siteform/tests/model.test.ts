@@ -236,3 +236,14 @@ test('pulling a setback outward moves the linked floors below up to the next ste
   const top={...block,floors:5}
   assert.deepEqual(adjustSetback(top,sample.targets,4,0,-2,.5).setbacks,drag(-2)?.slice(0,5))
 })
+
+test('pulling an upper edge aligned to ground extends the footprint and flush floors',()=>{
+  const block={...newBlock(sample,'apartment',[[0,0],[50,0]]),floors:5,
+    setbacks:[[0,0],[0,0],[0,0],[0,4],[8,7]] as [number,number][]}
+  for(const side of [0,1]){
+    const edited=adjustSetback(block,sample.targets,2,side,-5,.5)
+    assert.deepEqual(edited.line,side?[[0,0],[55,0]]:[[-5,0],[50,0]])
+    assert.deepEqual(edited.setbacks,side?[[0,0],[0,0],[0,0],[0,9],[8,12]]:[[0,0],[0,0],[0,0],[0,4],[13,7]])
+    assert.ok(footprintSatisfies(edited,sample.targets))
+  }
+})

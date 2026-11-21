@@ -177,22 +177,34 @@ export function adjustSetback(block:Block,targets:Project['targets'],floor:numbe
     while(first>1&&sharesEdge(endInset(block,first-1)[end]))first--
   }
   const minimum=endInset(block,first-1)[end]
-  const movement=Math.max(minimum-original,delta)
+  const extendsGround=delta<0&&first===1&&sharesEdge(0)
+  const movement=extendsGround?delta:Math.max(minimum-original,delta)
   if(Math.abs(movement)<1e-7)return block
   const outline=footprints(block,targets)[0]
   if(!outline)return block
-  const apply=(offset:number):Block=>({...block,setbacks:levels(block).map((_,i)=>{
-    const values=[...endInset(block,i)] as Point
-    if(i>=first&&sharesEdge(values[end]))values[end]=original+offset
-    else if(i>floor)values[end]=Math.max(values[end],original+offset)
-    return values
-  })})
+  const apply=(offset:number):Block=>{
+    if(extendsGround){
+      const line=[...block.line]
+      const index=end?line.length-1:0
+      const [x,y]=line[index]
+      const [dx,dy]=endDirection(block,end)
+      line[index]=[x+dx*offset,y+dy*offset]
+      return editGroundFrontage(block,line)
+    }
+    return {...block,setbacks:levels(block).map((_,i)=>{
+      const values=[...endInset(block,i)] as Point
+      if(i>=first&&sharesEdge(values[end]))values[end]=original+offset
+      else if(i>floor)values[end]=Math.max(values[end],original+offset)
+      return values
+    })}
+  }
+  const valid=(candidate:Block)=>extendsGround?footprintSatisfies(candidate,targets):validBlockFloors(candidate,outline)
   const requested=apply(movement)
-  if(validBlockFloors(requested,outline))return requested
+  if(valid(requested))return requested
   let low=0,high=1
   for(let i=0;i<22;i++){
     const mid=(low+high)/2
-    if(validBlockFloors(apply(movement*mid),outline))low=mid
+    if(valid(apply(movement*mid)))low=mid
     else high=mid
   }
   const accepted=movement*low
