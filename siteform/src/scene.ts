@@ -77,13 +77,13 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const boundary=project.boundary
   key('Site boundary','#ad574e',boundary,0,true)
   world(boundary,project.anchor?'#ead7be72':'#e9dbc7','#ad574e',2.1)
-  type Drawable=Surface & {paint:()=>void;alpha?:number;bounds:[number,number,number,number]}
+  type Drawable=Surface & {paint:()=>void;alpha?:number;rearWall?:boolean;bounds:[number,number,number,number]}
   const surfaces:Drawable[]=[]
-  function addSurface(surface:Surface,paint:()=>void,alpha?:number){
+  function addSurface(surface:Surface,paint:()=>void,alpha?:number,rearWall=false){
     const xs=surface.shape.map(p=>p[0]),ys=surface.shape.map(p=>p[1])
     const bounds:Drawable['bounds']=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]
     if(bounds[2]<-2||bounds[0]>w+2||bounds[3]<-2||bounds[1]>h+2)return
-    surfaces.push({...surface,paint,bounds,alpha})
+    surfaces.push({...surface,paint,bounds,alpha,rearWall})
   }
   type Material={roof:string; walls:string[]; line:string; floor:string}
   const white:Material={roof:'#fffefd',walls:['#efefed','#dededc','#e8e8e6','#f5f5f3'],line:'#a09f9a',floor:'#c5c4bf'}
@@ -99,14 +99,16 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       const winding=poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+p[0]*q[1]-p[1]*q[0]},0)
       for(const ring of [poly,...holes])ring.forEach((p,i)=>{
         const q=ring[(i+1)%ring.length],a=xy(p,base),b=xy(q,base)
-        if((b[0]-a[0])*Math.sign(winding)>=-1e-7)return
+        const facing=(b[0]-a[0])*Math.sign(winding)
+        const rearWall=facing>0
+        if(Math.abs(facing)<1e-7||rearWall&&wallOpacity===undefined)return
         const high=xy(p,z)
         const shape=[a,b,xy(q,z),high]
         addSurface({id,contextIndex,floor:storey,shape,depth:depthPlane(a,b,high,depth(p,base),depth(q,base),depth(p,z))},()=>{
           path(shape,material.walls[i%4],material.line,.75)
           if(storey!==undefined)path([high,xy(q,z)],undefined,material.floor,.85,false)
           storeys.slice(0,-1).forEach(level=>path([xy(p,base+level),xy(q,base+level)],undefined,material.floor,.85,false))
-        },wallOpacity)
+        },wallOpacity,rearWall)
       })
     }
     if(!cap)return
@@ -258,7 +260,12 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     }
   })
   const solidSurfaces=surfaces.filter(surface=>surface.contextIndex===undefined||!scene.ghosted.has(surface.contextIndex))
-  const paintSurfaces=[...solidSurfaces.filter(surface=>surface.alpha===undefined),...solidSurfaces.filter(surface=>surface.alpha!==undefined)]
+  const translucentWalls=solidSurfaces.filter(surface=>surface.alpha!==undefined)
+  const paintSurfaces=[
+    ...solidSurfaces.filter(surface=>surface.alpha===undefined),
+    ...translucentWalls.filter(surface=>surface.rearWall),
+    ...translucentWalls.filter(surface=>!surface.rearWall)
+  ]
   paintSurfaces.forEach((surface,index)=>{
     ctx.save()
     if(surface.id)ctx.globalAlpha=surface.alpha??opacity
@@ -267,6 +274,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       // Clip only where another face projects in front of this one.
       paintSurfaces.forEach((other,i)=>{
         if(i===index||other.alpha!==undefined&&surface.alpha===undefined||(!surface.id&&other.id&&opacity<1))return
+        // Let the walls on the far side show through the translucent walls in front.
+        if(surface.alpha!==undefined&&other.alpha!==undefined&&surface.id===other.id&&surface.rearWall!==other.rearWall)return
         const [x,y,r,b]=other.bounds
         if(r<=left||x>=right||b<=top||y>=bottom)return
         const mask=foregroundShape(surface,other,i>index)
