@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, 
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
-import { coreFill, draw, home, initialLayers, projection, type BuildingView, type Camera } from './scene'
+import { coreFill, draw, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadAerial,mapboxToken,type AerialTile} from './aerial'
 import {loadContext,emptyContext,type ContextData} from './context'
@@ -59,10 +59,9 @@ function App(){
   const [tool,setTool]=useState<Tool>('select')
   const [plan,setPlan]=useState(false)
   const [floor,setFloor]=useState(0)
-  const [buildingView,setBuildingView]=useState<BuildingView>('massing')
-  const [floorSpacing,setFloorSpacing]=useState(0)
-  const activeBuildingView=selected&&(buildingView!=='apartments'||selected.apartmentLayout)?buildingView:'massing'
-  const stackView=!plan&&activeBuildingView!=='massing'
+  const [revealedBlock,setRevealedBlock]=useState<string|null>(null)
+  const showApartments=!!selected?.apartmentLayout&&revealedBlock===selected.id
+  const stackView=!plan&&showApartments
   const [editFloor,setEditFloor]=useState(0)
   const selectedFloor=Math.min(editFloor,Math.max(0,(selected?.floors??1)-1))
   const [camera,setCamera]=useState<Camera>(home)
@@ -163,8 +162,8 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)scene.current=draw(canvas.current,{buildingView:activeBuildingView,floorSpacing,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
-  },[activeBuildingView,floorSpacing,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
+    if(canvas.current)scene.current=draw(canvas.current,{showApartments,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
+  },[showApartments,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
   function commit(next:Project,trimUpper=false){
     for(const block of next.blocks){
       const layout=apartmentLayout(block,next)
@@ -191,7 +190,7 @@ function App(){
   function switchView(next:boolean,focusFloor?:number){
     setPlan(next)
     if(focusFloor!==undefined)setFloor(focusFloor)
-    else if(activeBuildingView==='massing')setFloor(next?selectedFloor:0)
+    else if(!showApartments)setFloor(next?selectedFloor:0)
     if(draft.length||tool==='vertices')choose('select')
   }
   function setOption(next:typeof menu){setMenu(m=>m===next?null:next)}
@@ -202,7 +201,7 @@ function App(){
   function subdivide(block:Block){
     const mode=block.depth<14?'single':'double'
     if(commit({...project,blocks:project.blocks.map(b=>b===block?{...b,apartmentLayout:{...defaultApartmentOptions,mode,mix:{...settings.mix}}}:b)})){
-      if(!plan){setBuildingView('apartments');setFloorSpacing(0);setFloor(0)}
+      if(!plan){setRevealedBlock(block.id);setFloor(0)}
     }
   }
   function updateLayout(block:Block,options:Partial<ApartmentOptions>){
@@ -341,7 +340,7 @@ function App(){
       const updated=adjustSetback(block,d.project.targets,d.floor,d.vertex,delta,match?0:step)
       const applied=endInset(updated,d.floor)[d.vertex]-inset
       const heights=levels(block)
-      const level=plan?0:block.level+(stackView?heights[d.floor]+d.floor*floorSpacing:(heights[d.floor-1]+heights[d.floor])/2)
+      const level=plan?0:block.level+(stackView?heights[d.floor]:(heights[d.floor-1]+heights[d.floor])/2)
       setGuide(match&&Math.abs(applied-delta)<1e-6?{...match.guide,level}:undefined)
       setPreview({...d.project,blocks:d.project.blocks.map(b=>b===block?updated:b)})
       return
@@ -446,14 +445,8 @@ function App(){
   }
   function revealBlock(id:string|null){
     setSelection(id)
-    if(!plan){
-      const block=project.blocks.find(b=>b.id===id)
-      if(block&&apartmentLayout(block,project)?.ok){
-        if(id!==selection||activeBuildingView!=='apartments')setFloorSpacing(0)
-        setBuildingView('apartments')
-      }
-      else if(id!==selection)setBuildingView('massing')
-    }
+    if(!plan)setRevealedBlock(id)
+    else if(!id||id!==selection)setRevealedBlock(null)
   }
   function enterBuilding(id:string|null,hitFloor:number){
     const block=project.blocks.find(b=>b.id===id)
@@ -505,7 +498,7 @@ function App(){
     const model=projection(w,h,base,plan)
     const points=project.boundary.map(p=>model.project(p))
     project.blocks.forEach(b=>footprints(b,project.targets).forEach(poly=>poly.forEach(p=>{
-      points.push(model.project(p,plan?0:b.level),model.project(p,plan?0:b.level+height(b,project.houseHeights)+(stackView&&b.id===selection?(floors(b)-1)*floorSpacing:0)))
+      points.push(model.project(p,plan?0:b.level),model.project(p,plan?0:b.level+height(b,project.houseHeights)))
     })))
     if(!points.length){setCamera(home);return}
     const xs=points.map(p=>p[0]),ys=points.map(p=>p[1])
@@ -634,13 +627,6 @@ function App(){
             <Button icon="target" title="Fit model" onClick={fitModel}/>
           </div>
         </div>
-        {!plan&&selected&&<div className="building-display">
-          <label>Building view <select value={activeBuildingView} onChange={e=>setBuildingView(e.target.value as BuildingView)}>
-            <option value="massing">Massing</option><option value="floorplates">Floorplates</option>
-            <option value="apartments" disabled={!selected.apartmentLayout}>Apartments</option>
-          </select></label>
-          {stackView&&<label>Floor spacing <input type="range" min="0" max="20" step="1" value={floorSpacing} onChange={e=>setFloorSpacing(Number(e.target.value))}/></label>}
-        </div>}
         {(plan||stackView)&&<label className={'floor-picker'+(stackView?' stack-floor':'')}>Floor <select value={stackView&&selected?Math.min(shownFloor,floors(selected)-1):shownFloor} onChange={e=>{const next=Number(e.target.value);setFloor(next);if(selectedFloor)setEditFloor(Math.min(next,(selected?.floors??1)-1))}}>
           {Array.from({length:stackView&&selected?floors(selected):storyCount},(_,i)=><option value={i} key={i}>{i===0?'Ground':i}</option>)}</select></label>}
         {actions[tool]&&<div className="draw-message">
@@ -655,7 +641,7 @@ function App(){
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
         {(project.boundary.length>0||project.blocks.length>0)&&<div className="map-legend">{project.boundary.length>0&&<span><i className="redline"/>Site boundary</span>}{(['apartment','house','office','pbsa'] as const).filter(type=>project.blocks.some(b=>b.type===type)).map(type=>
           <span key={type}><i className={type} style={type==='house'?{background:project.colours['3B5P']}:undefined}/>{blockTypes[type].legend}</span>)}</div>}
-        {(plan||stackView&&activeBuildingView==='apartments')&&selectedLayout?.ok&&(stackView||selectedLayout.floors[shownFloor])&&<div className={'apartment-key'+(stackView?' stack-key':'')} aria-label="Apartment colour legend">
+        {(plan||stackView)&&selectedLayout?.ok&&(stackView||selectedLayout.floors[shownFloor])&&<div className={'apartment-key'+(stackView?' stack-key':'')} aria-label="Apartment colour legend">
           {dwellingTypes.filter(type=>(stackView?selectedUnits:selectedLayout.floors[shownFloor].units).some(unit=>unit.type===type)).map(type=>
             <span key={type}><i style={{background:settings.colours?.[type]??ndss[type].colour}}/>{type}</span>)}
           <span><i style={{background:coreFill}}/>Core</span><span><i style={{background:'#e7e4dd'}}/>Corridor</span>
