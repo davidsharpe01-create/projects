@@ -9,7 +9,7 @@ const rectangle=(span=54,depth=18):Block=>({...newBlock(project,'apartment',[[0,
 
 test('double loaded subdivision reserves core and corridor and mirrors units',()=>{
   const block=rectangle()
-  const answer=solveApartments(block,project)
+  const answer=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,travel:30}})
   assert.ok(answer.ok)
   const [ground,upper]=answer.floors
   assert.ok(ground.units.length>4)
@@ -59,7 +59,8 @@ test('higher-risk planning checks use top storey elevation and switch core allow
   const atHeight=solveApartments({...block,floors:6,level:1.5},project)
   assert.ok(atHeight.ok)
   assert.equal(atHeight.hrb,true)
-  assert.equal(atHeight.floors[0].coreArea,70)
+  assert.equal(atHeight.floors[0].coreArea,120)
+  assert.ok(Math.abs(area(atHeight.floors[0].cores[0])-70)<1e-7)
   const two=solveApartments({...block,floors:7,apartmentLayout:{...defaultApartmentOptions,hrbCores:2}},project)
   assert.ok(two.ok)
   assert.equal(two.floors[0].cores.length,2)
@@ -87,4 +88,27 @@ test('unsupported frontage returns a specific reason',()=>{
   const answer=solveApartments({...rectangle(),line:[[0,0],[20,0],[25,20]]},project)
   assert.ok(!answer.ok)
   assert.match(answer.reason,/straight frontage/)
+})
+
+test('adds aligned cores when apartment entrances are over the single-direction limit',()=>{
+  const block=rectangle()
+  const relaxed=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,travel:30}})
+  assert.ok(relaxed.ok)
+  assert.equal(relaxed.floors[0].cores.length,1)
+  assert.ok(relaxed.floors[0].travel>15)
+  const answer=solveApartments(block,project)
+  assert.ok(answer.ok)
+  for(const floor of answer.floors){
+    assert.equal(floor.cores.length,2)
+    assert.equal(floor.coreArea,100)
+    assert.ok(floor.travel<=15)
+    assert.deepEqual(floor.cores,answer.floors[0].cores)
+  }
+})
+
+test('retains the travel warning if a setback prevents another aligned core',()=>{
+  const answer=solveApartments({...rectangle(),setbacks:[[0,0],[21,21]]},project)
+  assert.ok(answer.ok)
+  assert.equal(answer.floors[0].cores.length,1)
+  assert.ok(answer.floors[0].travel>15)
 })

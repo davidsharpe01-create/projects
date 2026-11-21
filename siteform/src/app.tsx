@@ -106,7 +106,7 @@ function App(){
     if(!layout)continue
     if(!layout.ok){warnings.push(block.name+' · '+layout.reason);continue}
     layout.floors.forEach((layoutFloor,index)=>{
-      if(layoutFloor.travel>settings.travel+.00001)warnings.push(block.name+' · Floor '+index+' corridor route '+format(layoutFloor.travel,1)+' m exceeds '+settings.travel+' m.')
+      if(layoutFloor.travel>settings.travel+.00001)warnings.push(block.name+' · Floor '+index+' single-direction corridor route '+format(layoutFloor.travel,1)+' m exceeds '+settings.travel+' m.')
     })
     if(layout.hrb)warnings.push(block.name+' · Indicative higher-risk building threshold met ('+block.floors+' storeys; top floor '+format(layout.topStoreyHeight,1)+' m above datum).')
   }
@@ -653,7 +653,7 @@ function App(){
             <h3 id="apartment-types">Apartment types</h3>
             <div className="property-grid">
               <NumberField label="Clear corridor width" value={settings.corridor} min={1} step={.1} update={corridor=>commit({...project,apartmentSettings:{...settings,corridor}})}/>
-              <NumberField label="Corridor route allowance" value={settings.travel} min={1} step={.1} update={travel=>commit({...project,apartmentSettings:{...settings,travel}})}/>
+              <NumberField label="Single-direction travel limit" value={settings.travel} min={1} step={.1} update={travel=>commit({...project,apartmentSettings:{...settings,travel}})}/>
               {settings.frontages.map((value,i)=><NumberField key={i} label={`Min frontage · ${i+1} bed`} value={value} min={1} step={.1} update={next=>{
                 const frontages=[...settings.frontages] as typeof settings.frontages
                 frontages[i]=next

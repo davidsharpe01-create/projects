@@ -104,20 +104,28 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
   })
   const point=(x:number,y:number):Point=>[start[0]+x*dx-y*dy,start[1]+x*dy+y*dx]
   const polygon=(x:Span,y:Span)=>[point(x[0],y[0]),point(x[1],y[0]),point(x[1],y[1]),point(x[0],y[1])]
-  function generate(hrb:boolean):ApartmentResult {
-    const coreCount=hrb?config.hrbCores:1
-    const coreArea=hrb&&coreCount===1?70:50
-    const coreWidth=coreArea/(coreY[1]-coreY[0])
+  function generate(hrb:boolean,coreCount:number):ApartmentResult {
+    const primaryArea=hrb&&config.hrbCores===1?70:50
+    const coreAreas=Array.from({length:coreCount},(_,i)=>i===0?primaryArea:50)
+    const totalCoreArea=primaryArea+50*(coreCount-1)
+    const coreDepth=coreY[1]-coreY[0]
+    const totalWidth=totalCoreArea/coreDepth
     const top=spans.at(-1)!
-    const unfit=spans.findIndex(([a,b])=>b-a<coreWidth*coreCount+eps)
-    if(unfit>=0)return {ok:false,floor:unfit,reason:`Floor ${unfit} cannot fit the ${coreCount===1?coreArea+' m² core':'two 50 m² cores'}.`}
+    const unfit=spans.findIndex(([a,b])=>b-a<totalWidth+eps)
+    if(unfit>=0)return {ok:false,floor:unfit,reason:`Floor ${unfit} cannot fit the ${coreCount===1?primaryArea+' m² core':coreCount+' aligned cores'}.`}
     const [lo,hi]=spans[0]
     // Keep the typical grid centred on the ground floor unless an upper setback forces a core move.
-    const coreCentres=Array.from({length:coreCount},(_,i)=>{
-      const wanted=lo+(hi-lo)*((i+.5)/coreCount+((config.corePosition??50)-50)/100)
-      return Math.max(top[0]+coreWidth*(i+.5),Math.min(top[1]-coreWidth*(coreCount-i-.5),wanted))
+    let usedWidth=0,previousEnd=top[0]
+    const cores=coreAreas.map((area,i):Span=>{
+      const width=area/coreDepth
+      const wanted=lo+(hi-lo)*((i+.5)/coreCount+((config.corePosition??50)-50)/100)-width/2
+      const left=Math.max(previousEnd,Math.min(top[1]-totalWidth+usedWidth,wanted))
+      usedWidth+=width
+      previousEnd=left+width
+      return [left,previousEnd]
     })
-    const cores=coreCentres.map((c):Span=>[c-coreWidth/2,c+coreWidth/2])
+    const firstExit=(cores[0][0]+cores[0][1])/2
+    const lastExit=(cores.at(-1)![0]+cores.at(-1)![1])/2
     const zones:Span[]=[]
     let x=lo
     for(const core of cores){zones.push([x,core[0]],core);x=core[1]}
@@ -147,18 +155,33 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         outline:polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))
       const travel=fitting.reduce((distance,{unit})=>{
         const entrance=(unit.x[0]+unit.x[1])/2
-        return Math.max(distance,Math.min(...coreCentres.map(c=>Math.abs(c-entrance))))
+        // Between two core entrances the corridor offers a choice of direction.
+        return Math.max(distance,firstExit-entrance,entrance-lastExit)
       },0)
       return {units,cores:cores.map(core=>polygon(core,coreY)),corridor:polygon(limits,corridorY),
         uses:floor?[]:uses.map(use=>({kind:use.kind,outline:polygon(use.x,use.bay.y)})),
-        coreArea:coreArea*coreCount,corridorArea:(limits[1]-limits[0])*settings.corridor,travel}
+        coreArea:totalCoreArea,corridorArea:(limits[1]-limits[0])*settings.corridor,travel}
     })
     if(!floors.some(f=>f.units.length))return {ok:false,reason:'The core and corridor leave too little frontage or area for an apartment.'}
     return {ok:true,floors,hrb,topStoreyHeight}
   }
-  const standard=generate(false)
+  function routeLayout(hrb:boolean):ApartmentResult {
+    const minimum=hrb?config.hrbCores:1
+    const initial=generate(hrb,minimum)
+    if(!initial.ok)return initial
+    const longest=(layout:Layout)=>Math.max(...layout.floors.map(f=>f.travel))
+    let best=initial
+    for(let count=minimum+1;longest(best)>settings.travel+eps;count++){
+      const candidate=generate(hrb,count)
+      if(!candidate.ok)break
+      if(hrb&&candidate.floors.reduce((count,f)=>count+f.units.length,0)<2)continue
+      if(longest(candidate)<longest(best)-eps)best=candidate
+    }
+    return best
+  }
+  const standard=routeLayout(false)
   if(!standard.ok||!threshold||standard.floors.reduce((count,f)=>count+f.units.length,0)<2)return standard
-  const higherRisk=generate(true)
+  const higherRisk=routeLayout(true)
   if(higherRisk.ok&&higherRisk.floors.reduce((count,f)=>count+f.units.length,0)<2){
     return {ok:false,reason:'The higher-risk core leaves room for fewer than two apartments. Adjust the block or core layout.'}
   }
