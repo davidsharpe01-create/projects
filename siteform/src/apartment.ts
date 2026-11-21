@@ -1,4 +1,4 @@
-import {area,defaults,endInset,length,validPolygon,type Block,type Point,type Project} from './model.ts'
+import {area,defaults,endInset,length,validPolygon,inside,type Block,type Point,type Project} from './model.ts'
 import {defaultMix,defaultTargets,dwellingTypes,ndss,type DwellingType} from './ndss.ts'
 
 export type ApartmentOptions={mode:'single'|'double';coreSide:'front'|'rear';hrbCores:1|2;mix?:Record<DwellingType,number>;commercial?:number;communal?:number;corePosition?:number}
@@ -121,6 +121,15 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     }
     return {offsetAt,worldPoint,stationAt,rectangularRun,stationBounds,rectangle}
   }
+  function cornerBand(vertex:number,y:Span,leg:number){
+    const left=wingFrame(vertex-1),right=wingFrame(vertex),x=stations[vertex]
+    const leftCuts=y.map(depth=>left.offsetAt(x,depth)),rightCuts=y.map(depth=>right.offsetAt(x,depth))
+    const a=Math.min(...leftCuts)-leg,b=Math.max(...rightCuts)+leg
+    const outline=[left.worldPoint(a,y[0]),atVertex(vertex,y[0]),right.worldPoint(b,y[0]),
+      right.worldPoint(b,y[1]),atVertex(vertex,y[1]),left.worldPoint(a,y[1])]
+    return {outline,a,b,left,right,
+      runs:[{wing:vertex-1,run:[a,Math.max(...leftCuts)] as Span},{wing:vertex,run:[Math.min(...rightCuts),b] as Span}]}
+  }
   const along=([a,b]:Span,y:number):Point[]=>[a,...bends.map(bend=>bend.x).filter(x=>x>a+eps&&x<b-eps),b].map(x=>point(x,y))
   const polygon=(x:Span,y:Span)=>[...along(x,y[0]),...along(x,y[1]).reverse()]
   // Each ribbon segment interpolates between parallel offsets joined at their miters.
@@ -144,7 +153,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
   if(double||singleFront)bays.push({side:'front',y:[E,corridorY[0]-corridorWall]})
   if(double||!singleFront)bays.push({side:'rear',y:[corridorY[1]+corridorWall,D-E]})
   const defaultSide=double?config.coreSide:singleFront?'front':'rear'
-  const coreDepths=(side:Bay['side']):Span=>side==='front'?[E,corridorY[0]]:[corridorY[1],D-E]
+  const coreDepths=(side:Bay['side']):Span=>side==='front'?[E,corridorY[0]-corridorWall]:[corridorY[1]+corridorWall,D-E]
   if(!offsets.every(p=>p.every(Number.isFinite))||directions.some(([dx,dy],i)=>{
     const a=atVertex(i,D),b=atVertex(i+1,D)
     return (b[0]-a[0])*dx+(b[1]-a[1])*dy<=eps
@@ -158,6 +167,11 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     const front=endLimits(insets,E),rear=endLimits(insets,D-E)
     return [Math.max(front[0],rear[0]),Math.min(front[1],rear[1])]
   })
+  function fitsTop(outline:Point[]){
+    const limits=endInset(block,block.floors-1)
+    const top=[...along(endLimits(limits,E),E),...along(endLimits(limits,D-E),D-E).reverse()]
+    return validPolygon(outline)&&outline.every(p=>inside(p,top))
+  }
   function generate(hrb:boolean,coreCount:number,shift=0,preferNextWing=false,oppositeRun=-1,alternateShift=false):ApartmentResult {
     const primaryArea=hrb&&config.hrbCores===1?70:50
     const top=spans.at(-1)!
@@ -215,10 +229,32 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     })
     const corridorCentre=(corridorY[0]+corridorY[1])/2
     const reserved=cores.map(core=>({x:core.x,side:core.side,wing:-1,run:core.x}))
+    const cornerBlocks:{wing:number;run:Span;side:Bay['side']}[]=[]
     const corePolygons=cores.map((core,index)=>{
       const y=coreDepths(core.side)
       if(!bends.length)return polygon(core.x,y)
       const target=targets[index]
+      if(target.corner){
+        const vertex=stations.indexOf(target.x)
+        let low=0,high=coreAreas[index]/(y[1]-y[0])
+        for(let step=0;step<40;step++){
+          const leg=(low+high)/2
+          if(area(cornerBand(vertex,y,leg).outline)<coreAreas[index])low=leg
+          else high=leg
+        }
+        const band=cornerBand(vertex,y,Math.max(.35,high))
+        const overlaps=band.runs.some(run=>[...reserved,...cornerBlocks].some(other=>
+          other.side===core.side&&other.wing===run.wing&&other.run[0]<run.run[1]-eps&&other.run[1]>run.run[0]+eps))
+        if(!overlaps&&fitsTop(band.outline)){
+          const edge=core.side==='front'?y[1]:y[0]
+          core.x=[band.left.stationAt(band.a,corridorCentre),band.right.stationAt(band.b,corridorCentre)]
+          reserved[index].x=[Math.min(...y.map(depth=>band.left.stationAt(band.a,depth))),
+            Math.max(...y.map(depth=>band.right.stationAt(band.b,depth)))]
+          cornerBlocks.push(...band.runs.map(run=>({...run,side:core.side})))
+          core.pointAtEdge=station=>point(station,edge)
+          return band.outline
+        }
+      }
       const middle=target.corner?target.x:(core.x[0]+core.x[1])/2
       const wing=segment(middle)
       const candidates=target.corner?(preferNextWing?[wing+1,wing]:[wing,wing+1]):[wing]
@@ -254,6 +290,27 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       return {points,distance:routeLength(points),betweenCores:true}
     }).filter(route=>route.distance>eps)
     const betweenCores=Math.max(0,...coreRoutes.map(route=>route.distance))
+    const cornerUnits:ApartmentBayUnit[]=[]
+    for(const bend of bends){
+      const vertex=stations.indexOf(bend.x)
+      const [ax,ay]=directions[vertex-1],[bx,by]=directions[vertex]
+      const bay=bays.find(bay=>bay.side!==bend.side)
+      if(!bay||Math.abs(ax*bx+ay*by)>.035)continue
+      const outer=bay.side==='front'?bay.y[0]:bay.y[1]
+      const edge=bay.side==='front'?corridorY[0]:corridorY[1]
+      const target=areaTarget('2B4P',project)
+      const band=cornerBand(vertex,bay.y,Math.max(.35,(target-area(cornerBand(vertex,bay.y,0).outline))/(2*(bay.y[1]-bay.y[0]))))
+      const [left,right]=[band.left.worldPoint(band.a,outer),band.right.worldPoint(band.b,outer)]
+      const frontage=length(left,atVertex(vertex,outer))+length(atVertex(vertex,outer),right)
+      const size=area(band.outline)
+      if(size<ndss['2B4P'].areas[0]-eps||frontage<settings.frontages[1]||!fitsTop(band.outline))continue
+      if(band.runs.some(run=>[...reserved,...cornerBlocks].some(core=>core.side===bay.side&&core.wing===run.wing&&
+        core.run[0]<run.run[1]+defaults.party/2&&core.run[1]>run.run[0]-defaults.party/2)))continue
+      cornerBlocks.push(...band.runs.map(run=>({...run,side:bay.side})))
+      const x:Span=[band.left.stationAt(band.a,corridorCentre),band.right.stationAt(band.b,corridorCentre)]
+      cornerUnits.push({x,bay,type:'2B4P',area:size,minimum:ndss['2B4P'].areas[0],target,outline:band.outline,
+        corridorStations:x,corridorJunctions:[band.left.worldPoint(band.a,edge),band.right.worldPoint(band.b,edge)]})
+    }
     const ranges:{zone:Span;eligible:Bay[];wing?:number}[]=[]
     function addRange(zone:Span,eligible:Bay[],wing?:number){
       if(zone[1]-zone[0]>eps&&eligible.length)ranges.push({zone,eligible,wing})
@@ -276,7 +333,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         for(let wing=0;wing<directions.length;wing++){
           const [start,end]=bayLimits(wing,bay,0)
           let x=start
-          const obstructions=reserved.filter(core=>core.wing===wing&&core.side===bay.side)
+          const obstructions=[...reserved,...cornerBlocks].filter(core=>core.wing===wing&&core.side===bay.side)
             .sort((a,b)=>a.run[0]-b.run[0])
           for(const core of obstructions){
             addRange([x,Math.min(end,core.run[0])],[bay],wing)
@@ -335,15 +392,11 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
           if(floor===0&&uses.some(use=>use.wing===wing&&use.bay===unit.bay&&use.x[1]>run[0]-defaults.party/2+eps&&use.x[0]<run[1]+defaults.party/2-eps))return []
           return [{unit,index:`${rowIndex}:${index}`}]
         })
-        // Re-pack only the bay cut by an upper setback, and only if it gains
-        // usable area while keeping at least as many qualifying apartments.
-        if(wing===undefined||!floor||remaining[1]-remaining[0]<=eps||
-          remaining[0]<=zone[0]+eps&&remaining[1]>=zone[1]-eps)return retained
-        const rebuilt=allocateRange(remaining,eligible,wing)
-        const used=retained.reduce((sum,{unit})=>sum+unit.area,0)
-        if(rebuilt.length<retained.length||rebuilt.reduce((sum,unit)=>sum+unit.area,0)<=used+1)return retained
-        return rebuilt.map((unit,index)=>({unit,index:`${rowIndex}:setback:${index}`}))
+        return retained
       })
+      if(floor>0||(config.commercial??0)+(config.communal??0)<100){
+        fitting.push(...cornerUnits.map((unit,index)=>({unit,index:`corner:${index}`})))
+      }
       const units=fitting.map(({unit,index})=>({id:`${block.id}:${floor}:${index}`,type:unit.type,
         outline:unit.outline??polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))
       const endRoutes:(TravelRoute|undefined)[]=[]
@@ -356,7 +409,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         const coreX=Math.min(right,Math.max(left,x))
         const side=x<=left?0:x>=right?1:2
         const core=side===1?cores.at(-1)!:cores[0]
-        const edge=core.side==='front'?corridorY[0]:corridorY[1]
+        const edge=coreDepths(core.side)[core.side==='front'?1:0]
         const unitEdge=unit.bay.side==='front'?corridorY[0]:corridorY[1]
         const corridorPoints=along([Math.min(x,coreX),Math.max(x,coreX)],corridorCentre)
         if(coreX>x)corridorPoints.reverse()
