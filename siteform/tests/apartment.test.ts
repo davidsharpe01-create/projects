@@ -174,22 +174,25 @@ test('extending a lower wing adds cores below the setback and keeps the upper co
   assert.ok(after.floors.every(floor=>floor.travel<=15&&floor.betweenCores<=30))
 })
 
-test('single-direction travel runs from the outer core edge to the first party-wall junction',()=>{
+test('single-direction travel uses access points 1 m along the core wall and 2 m along the apartment wall',()=>{
   const answer=solveApartments(rectangle(),project)
   assert.ok(answer.ok)
   const floor=answer.floors[0]
   assert.equal(floor.cores.length,1)
   const [left,right]=floor.cores[0].slice(0,2).map(p=>p[0])
-  const expected=Math.max(...floor.units.map(({outline})=>{
-    const gap=(x:number)=>Math.max(0,left-x,x-right)
-    return Math.min(gap(outline[0][0]),gap(outline[1][0]))+1.8
-  }))
-  assert.ok(Math.abs(floor.travel-expected)<1e-7)
-  for(const route of floor.travelRoutes){
+  const outerRoutes=floor.travelRoutes.filter(route=>route.points.at(-1)![0]<left||route.points.at(-1)![0]>right)
+  assert.equal(outerRoutes.length,2)
+  for(const route of outerRoutes){
+    const [coreX,coreY]=route.points[0]
     const [x,y]=route.points.at(-1)!
-    assert.ok(y===8.25||y===9.75)
-    assert.ok(floor.units.some(({outline})=>outline.some(p=>Math.abs(p[0]-x)<1e-7)))
+    const onLeft=x<left
+    assert.ok(Math.abs(coreX-(onLeft?left+1:right-1))<1e-7)
+    assert.ok(floor.cores[0].some(p=>Math.abs(p[1]-coreY)<1e-7))
+    assert.ok(floor.units.some(({outline})=>outline.some(([wallX,wallY])=>
+      Math.abs(wallY-y)<1e-7&&Math.abs(wallX-(x+(onLeft?2:-2)))<1e-7)))
+    assert.ok(Math.abs(route.distance-(Math.abs(coreX-x)+2.1))<1e-7)
   }
+  assert.equal(floor.travel,Math.max(...outerRoutes.map(route=>route.distance)))
 })
 
 test('applies the 15 m HRB limit and the 30 m edge-to-edge spacing limit',()=>{

@@ -149,7 +149,26 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     return {outline,a,b,left,right,
       runs:[{wing:vertex-1,run:[a,Math.max(...leftCuts)] as Span},{wing:vertex,run:[Math.min(...rightCuts),b] as Span}]}
   }
-  const along=([a,b]:Span,y:number):Point[]=>[a,...bends.map(bend=>bend.x).filter(x=>x>a+eps&&x<b-eps),b].map(x=>point(x,y))
+  const stops=([a,b]:Span)=>[a,...bends.map(bend=>bend.x).filter(x=>x>a+eps&&x<b-eps),b]
+  const along=(range:Span,y:number):Point[]=>stops(range).map(x=>point(x,y))
+  function wallAccess(range:Span,atEdge:(x:number)=>Point,fromRight:boolean,metres:number){
+    const cuts=stops(range)
+    if(fromRight)cuts.reverse()
+    for(let i=1;i<cuts.length;i++){
+      const a=atEdge(cuts[i-1]),b=atEdge(cuts[i])
+      const run=length(a,b)
+      if(run<=eps)continue
+      if(metres<=run){
+        const t=metres/run
+        const station=cuts[i-1]+t*(cuts[i]-cuts[i-1])
+        const wall:Point=[a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])]
+        return {station,wall}
+      }
+      metres-=run
+    }
+    const station=cuts.at(-1)!
+    return {station,wall:atEdge(station)}
+  }
   const polygon=(x:Span,y:Span)=>[...along(x,y[0]),...along(x,y[1]).reverse()]
   // Each ribbon segment interpolates between parallel offsets joined at their miters.
   const endLimits=(insets:Point,y:number):Span=>{
@@ -323,7 +342,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       const bay=bays.find(bay=>bay.side!==bend.side)
       if(!bay)continue
       const outer=bay.side==='front'?bay.y[0]:bay.y[1]
-      const edge=bay.side==='front'?corridorY[0]:corridorY[1]
+      const edge=bay.y[bay.side==='front'?1:0]
       const baseArea=area(cornerBand(vertex,bay.y,0).outline)
       const bayDepth=bay.y[1]-bay.y[0]
       let best:{unit:ApartmentBayUnit;floors:number;band:ReturnType<typeof cornerBand>}|undefined
@@ -393,7 +412,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     }
     function bentUnit(unit:LocalUnit,wing:number,run:Span):ApartmentBayUnit{
       const frame=wingFrame(wing),[left,right]=run
-      const corridorEdge=unit.bay.side==='front'?corridorY[0]:corridorY[1]
+      const corridorEdge=unit.bay.y[unit.bay.side==='front'?1:0]
       return {...unit,x:run,outline:frame.rectangle(run,unit.bay.y),
         area:(right-left)*(unit.bay.y[1]-unit.bay.y[0]),
         corridorStations:[frame.stationAt(left,corridorCentre),frame.stationAt(right,corridorCentre)],
@@ -528,15 +547,21 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         if(floorCores.length>1&&start<=right&&end>=left)continue
         const gap=(x:number)=>Math.max(0,left-x,x-right)
         const x=gap(start)<=gap(end)?start:end
-        const coreX=Math.min(right,Math.max(left,x))
         const side=x<=left?0:x>=right?1:2
         const core=side===1?floorCores.at(-1)!:floorCores[0]
         const edge=coreDepths(core.side)[core.side==='front'?1:0]
-        const unitEdge=unit.bay.side==='front'?corridorY[0]:corridorY[1]
-        const corridorPoints=along([Math.min(x,coreX),Math.max(x,coreX)],corridorCentre)
-        if(coreX>x)corridorPoints.reverse()
-        const junction=unit.corridorJunctions?.[x===start?0:1]??point(x,unitEdge)
-        const points=[core.pointAtEdge?.(coreX)??point(coreX,edge),...corridorPoints,junction]
+        const unitEdge=unit.bay.y[unit.bay.side==='front'?1:0]
+        const apartment=wallAccess([start,end],station=>{
+          if(station===start&&unit.corridorJunctions)return unit.corridorJunctions[0]
+          if(station===end&&unit.corridorJunctions)return unit.corridorJunctions[1]
+          return point(station,unitEdge)
+        },x===end,2)
+        const coreWall=core.pointAtEdge??(station=>point(station,edge))
+        const access=wallAccess(core.x,coreWall,
+          side===1||(side===2&&apartment.station>(core.x[0]+core.x[1])/2),1)
+        const corridorPoints=along([Math.min(apartment.station,access.station),Math.max(apartment.station,access.station)],corridorCentre)
+        if(access.station>apartment.station)corridorPoints.reverse()
+        const points=[access.wall,...corridorPoints,apartment.wall]
         const distance=routeLength(points)
         if(distance<=(endRoutes[side]?.distance??0))continue
         endRoutes[side]={points,distance,betweenCores:false}
