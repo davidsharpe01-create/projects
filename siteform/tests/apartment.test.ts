@@ -264,7 +264,7 @@ test('extra cores on a long L stay rectangular and leave a continuous apartment 
   }
   const front=floor.units.filter(unit=>unit.outline.every(p=>p[1]<8.25)).sort((a,b)=>a.outline[0][0]-b.outline[0][0])
   assert.ok(front.length>=4)
-  assert.ok(front.slice(1).every((unit,i)=>unit.outline[0][0]-front[i].outline[1][0]<=.3+1e-7))
+  assert.ok(front.slice(1).every((unit,i)=>unit.outline[0][0]-front[i].outline[1][0]<=defaults.party+.1))
   assert.ok(floor.travel<=30&&floor.betweenCores<=30)
 })
 
@@ -388,4 +388,21 @@ test('a smaller apartment fills each usable bay at a setback without moving the 
     assert.ok(upper.units.some(candidate=>JSON.stringify(candidate.outline)===JSON.stringify(unit.outline)))
   }
   assert.ok(upper.travel<=30&&upper.betweenCores<=30)
+})
+
+test('apartment areas stay within five percent above target on straight, corner and setback floors',()=>{
+  for(const [line,setbacks] of [
+    [[[0,0],[54,0]],undefined],
+    [[[0,0],[42,0],[42,42]],[[0,0],[4,0]]]
+  ] as [Block['line'],Block['setbacks']][]){
+    const result=solveApartments({...rectangle(),line,setbacks},project)
+    assert.ok(result.ok)
+    const units=result.floors.flatMap(floor=>floor.units)
+    assert.ok(units.length>0)
+    for(const unit of units){
+      const size=area(unit.outline)
+      assert.ok(size<=unit.target*1.05+1e-7)
+      assert.ok(size>=unit.minimum-1e-7)
+    }
+  }
 })

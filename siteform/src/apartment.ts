@@ -24,6 +24,7 @@ export const areaTarget=(type:DwellingType,project:Inputs)=>{
   return Math.max(ndss[type].areas[0],apartmentSettings(project).targets[type]??defaultTargets[type])
 }
 
+const maxApartmentArea=(target:number)=>target*1.05
 const largeApartment=(type:DwellingType)=>ndss[type].people>=4
 
 function allocate(span:Span,bay:Bay,project:Inputs,options:ApartmentSettings,ends:boolean[]) {
@@ -34,16 +35,17 @@ function allocate(span:Span,bay:Bay,project:Inputs,options:ApartmentSettings,end
     const front=options.frontages[ndss[type].beds-1]
     const share=mixTotal?options.mix[type]/mixTotal:1/dwellingTypes.length
     return {type,minimum,target,share,min:Math.max(front,minimum/depth+defaults.party),
-      desired:Math.max(front,target/depth+defaults.party)}
+      desired:Math.max(front,target/depth+defaults.party),max:maxApartmentArea(target)/depth+defaults.party}
   })
-  const narrowest=Math.min(...items.map(t=>t.min))
+  const fittingItems=items.filter(item=>item.min<=item.max+eps)
+  const narrowest=Math.min(...fittingItems.map(t=>t.min))
   let best:{score:number;items:typeof items}|undefined
   for(let count=1;count<=Math.min(200,Math.floor((width+eps)/narrowest));count++){
     const used=new Map<DwellingType,number>()
     let remaining=width
     const selection:typeof items=[]
     for(let i=0;i<count;i++){
-      const feasible=items.filter(t=>remaining+eps>=t.min+(count-i-1)*narrowest)
+      const feasible=fittingItems.filter(t=>remaining+eps>=t.min+(count-i-1)*narrowest)
       feasible.sort((a,b)=>(b.share*count-(used.get(b.type)??0))-(a.share*count-(used.get(a.type)??0))||a.desired-b.desired)
       const item=feasible[0]
       if(!item)break
@@ -56,7 +58,8 @@ function allocate(span:Span,bay:Bay,project:Inputs,options:ApartmentSettings,end
     const desired=selection.reduce((sum,t)=>sum+t.desired,0)
     const endSlots=count===1?Number(ends.some(Boolean)):ends.filter(Boolean).length
     const largeCount=selection.filter(item=>largeApartment(item.type)&&item.share>0).length
-    const score=deviation*1.6-.12*Math.min(endSlots,largeCount)+Math.max(0,desired-width)/width*2+Math.max(0,width-desired)/width*.65
+    const capacity=selection.reduce((sum,item)=>sum+item.max,0)
+    const score=Math.max(0,width-capacity)/width*4+deviation*1.6-.12*Math.min(endSlots,largeCount)+Math.max(0,desired-width)/width*2+Math.max(0,width-desired)/width*.65
     if(!best||score<best.score-eps)best={score,items:selection}
   }
   if(!best)return []
@@ -73,11 +76,14 @@ function allocate(span:Span,bay:Bay,project:Inputs,options:ApartmentSettings,end
   const minimum=units.reduce((sum,item)=>sum+item.min,0)
   const desired=units.reduce((sum,item)=>sum+item.desired,0)
   const toTarget=desired>minimum?Math.min(1,(width-minimum)/(desired-minimum)):0
-  const surplus=Math.max(0,width-desired)
+  const capacity=units.reduce((sum,item)=>sum+item.max,0)
+  const toCap=capacity>desired?Math.min(1,Math.max(0,width-desired)/(capacity-desired)):0
+  const unused=Math.max(0,width-capacity)
   let x=span[0]
   return units.map((item,i):LocalUnit=>{
-    const available=item.min+(item.desired-item.min)*toTarget+surplus*item.desired/desired
-    const next=i===units.length-1?span[1]:x+available
+    if(ends[1]&&i===(ends[0]&&units.length>1?units.length-1:0))x+=unused
+    const available=item.min+(item.desired-item.min)*toTarget+(item.max-item.desired)*toCap
+    const next=x+available
     const clear:Span=[x+defaults.party/2,next-defaults.party/2]
     x=next
     return {x:clear,bay,type:item.type,area:(clear[1]-clear[0])*depth,minimum:item.minimum,target:item.target}
@@ -321,7 +327,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       const baseArea=area(cornerBand(vertex,bay.y,0).outline)
       const bayDepth=bay.y[1]-bay.y[0]
       let best:{unit:ApartmentBayUnit;floors:number;band:ReturnType<typeof cornerBand>}|undefined
-      for(const type of ['2B4P','2B3P','1B2P','1B1P'] as const){
+      for(const type of ['2B4P','2B3P','1B2P','1B1P','3B5P','3B6P'] as const){
         const minimum=ndss[type].areas[0],target=areaTarget(type,project)
         for(const desired of [target,minimum]){
           const metres=Math.max(.7,(desired-baseArea)/bayDepth)
@@ -331,7 +337,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
             const [left,right]=[band.left.worldPoint(band.a,outer),band.right.worldPoint(band.b,outer)]
             const frontage=length(left,atVertex(vertex,outer))+length(atVertex(vertex,outer),right)
             const size=area(band.outline)
-            if(size<minimum-eps||frontage<settings.frontages[ndss[type].beds-1]||!validPolygon(band.outline))continue
+            if(size<minimum-eps||size>maxApartmentArea(target)+eps||frontage<settings.frontages[ndss[type].beds-1]||!validPolygon(band.outline))continue
             if(band.runs.some(run=>[...reserved,...cornerBlocks].some(core=>core.side===bay.side&&core.wing===run.wing&&
               core.run[0]<run.run[1]+defaults.party-eps&&core.run[1]>run.run[0]-defaults.party+eps)))continue
             const firstCut=interiors.findIndex(interior=>!band.outline.every(p=>inside(p,interior)))
@@ -426,6 +432,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
             ...matches.map(unit=>bentUnit({...unit,bay},wing,unit.x)),
             ...allocateRange([right,zone[1]],[bay],wing)
           ]
+          if(candidate.some(unit=>unit.area>maxApartmentArea(unit.target)+eps))continue
           if(largeEnds(candidate)<largeEnds(typical[index]))continue
           if(candidate.length<original.length||candidate.reduce((sum,unit)=>sum+unit.area,0)<originalArea-defaults.party*clearBay-eps)continue
           typical[index]=candidate
