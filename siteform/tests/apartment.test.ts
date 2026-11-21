@@ -92,7 +92,7 @@ test('bent frontages have continuous corridors and cores on the inside of each t
     const [ground,upper]=answer.floors
     assert.equal(ground.cores.length,1)
     assert.ok(ground.corridor.length>4)
-    assert.ok(ground.cores[0].length>4)
+    assert.equal(ground.cores[0].length,4)
     assert.ok(Math.abs(area(ground.cores[0])-50)<1e-5)
     assert.ok(ground.cores[0].every(([,y])=>turn>0?y>=9.75-1e-7:y<=8.25+1e-7))
     assert.deepEqual(upper.cores,ground.cores)
@@ -198,7 +198,7 @@ test('extra cores on a long L stay rectangular and leave a continuous apartment 
   const floor=answer.floors[0]
   assert.ok(floor.cores.length>1&&floor.cores.length<=4)
   const wingCores=floor.cores.filter(outline=>outline.length===4)
-  assert.equal(wingCores.length,floor.cores.length-1)
+  assert.equal(wingCores.length,floor.cores.length)
   for(const [a,b,c,d] of wingCores){
     assert.ok(Math.abs((b[0]-a[0])*(d[0]-a[0])+(b[1]-a[1])*(d[1]-a[1]))<1e-7)
     assert.ok(Math.abs(area([a,b,c,d])-50)<1e-7)
@@ -207,4 +207,27 @@ test('extra cores on a long L stay rectangular and leave a continuous apartment 
   assert.ok(front.length>=4)
   assert.ok(front.slice(1).every((unit,i)=>unit.outline[0][0]-front[i].outline[1][0]<=.3+1e-7))
   assert.ok(floor.travel<=30&&floor.betweenCores<=30)
+})
+
+test('tall L with setbacks keeps cores square, aligned and within travel limits',()=>{
+  const block={...rectangle(),floors:11,line:[[0,0],[95,0],[95,50]] as Block['line'],
+    setbacks:[[0,0],[0,0],[18,12]] as Block['setbacks']}
+  const result=solveApartments(block,project)
+  assert.ok(result.ok&&result.hrb)
+  const ground=result.floors[0]
+  assert.equal(ground.cores.length,4)
+  assert.ok(ground.units.length>=19)
+  assert.ok(result.floors[2].units.length>=10)
+  assert.ok(ground.cores.some(core=>Math.abs(area(core)-70)<1e-7))
+  for(const floor of result.floors){
+    assert.deepEqual(floor.cores,ground.cores)
+    assert.ok(floor.travel<=15&&floor.betweenCores<=30)
+    for(const polygon of [...floor.cores,...floor.units.map(unit=>unit.outline)]){
+      assert.equal(polygon.length,4)
+      polygon.forEach(([x,y],i)=>{
+        const [a,b]=polygon[(i+1)%polygon.length]
+        assert.ok(Math.abs(x-a)<1e-7||Math.abs(y-b)<1e-7)
+      })
+    }
+  }
 })
