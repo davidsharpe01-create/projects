@@ -121,10 +121,10 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     }
     return {offsetAt,worldPoint,stationAt,rectangularRun,stationBounds,rectangle}
   }
-  function cornerBand(vertex:number,y:Span,leg:number){
+  function cornerBand(vertex:number,y:Span,leg:number,rightLeg=leg){
     const left=wingFrame(vertex-1),right=wingFrame(vertex),x=stations[vertex]
     const leftCuts=y.map(depth=>left.offsetAt(x,depth)),rightCuts=y.map(depth=>right.offsetAt(x,depth))
-    const a=Math.min(...leftCuts)-leg,b=Math.max(...rightCuts)+leg
+    const a=Math.min(...leftCuts)-leg,b=Math.max(...rightCuts)+rightLeg
     const outline=[left.worldPoint(a,y[0]),atVertex(vertex,y[0]),right.worldPoint(b,y[0]),
       right.worldPoint(b,y[1]),atVertex(vertex,y[1]),left.worldPoint(a,y[1])]
     return {outline,a,b,left,right,
@@ -167,11 +167,11 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     const front=endLimits(insets,E),rear=endLimits(insets,D-E)
     return [Math.max(front[0],rear[0]),Math.min(front[1],rear[1])]
   })
-  function fitsTop(outline:Point[]){
-    const limits=endInset(block,block.floors-1)
-    const top=[...along(endLimits(limits,E),E),...along(endLimits(limits,D-E),D-E).reverse()]
-    return validPolygon(outline)&&outline.every(p=>inside(p,top))
-  }
+  const interiors=spans.map((_,floor)=>{
+    const insets=endInset(block,floor)
+    return [...along(endLimits(insets,E),E),...along(endLimits(insets,D-E),D-E).reverse()]
+  })
+  const fitsTop=(outline:Point[])=>validPolygon(outline)&&outline.every(p=>inside(p,interiors.at(-1)!))
   function generate(hrb:boolean,coreCount:number,shift=0,preferNextWing=false,oppositeRun=-1,alternateShift=false):ApartmentResult {
     const primaryArea=hrb&&config.hrbCores===1?70:50
     const top=spans.at(-1)!
@@ -290,25 +290,44 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       return {points,distance:routeLength(points),betweenCores:true}
     }).filter(route=>route.distance>eps)
     const betweenCores=Math.max(0,...coreRoutes.map(route=>route.distance))
-    const cornerUnits:ApartmentBayUnit[]=[]
+    const cornerUnits:{unit:ApartmentBayUnit;floors:number}[]=[]
     for(const bend of bends){
       const vertex=stations.indexOf(bend.x)
       const bay=bays.find(bay=>bay.side!==bend.side)
       if(!bay)continue
       const outer=bay.side==='front'?bay.y[0]:bay.y[1]
       const edge=bay.side==='front'?corridorY[0]:corridorY[1]
-      const target=areaTarget('2B4P',project)
-      const band=cornerBand(vertex,bay.y,Math.max(.35,(target-area(cornerBand(vertex,bay.y,0).outline))/(2*(bay.y[1]-bay.y[0]))))
-      const [left,right]=[band.left.worldPoint(band.a,outer),band.right.worldPoint(band.b,outer)]
-      const frontage=length(left,atVertex(vertex,outer))+length(atVertex(vertex,outer),right)
-      const size=area(band.outline)
-      if(size<ndss['2B4P'].areas[0]-eps||frontage<settings.frontages[1]||!fitsTop(band.outline))continue
-      if(band.runs.some(run=>[...reserved,...cornerBlocks].some(core=>core.side===bay.side&&core.wing===run.wing&&
-        core.run[0]<run.run[1]+defaults.party/2&&core.run[1]>run.run[0]-defaults.party/2)))continue
-      cornerBlocks.push(...band.runs.map(run=>({...run,side:bay.side})))
-      const x:Span=[band.left.stationAt(band.a,corridorCentre),band.right.stationAt(band.b,corridorCentre)]
-      cornerUnits.push({x,bay,type:'2B4P',area:size,minimum:ndss['2B4P'].areas[0],target,outline:band.outline,
-        corridorStations:x,corridorJunctions:[band.left.worldPoint(band.a,edge),band.right.worldPoint(band.b,edge)]})
+      const baseArea=area(cornerBand(vertex,bay.y,0).outline)
+      const bayDepth=bay.y[1]-bay.y[0]
+      let best:{unit:ApartmentBayUnit;floors:number;band:ReturnType<typeof cornerBand>}|undefined
+      for(const type of ['2B4P','2B3P','1B2P','1B1P'] as const){
+        const minimum=ndss[type].areas[0],target=areaTarget(type,project)
+        for(const desired of [target,minimum]){
+          const metres=Math.max(.7,(desired-baseArea)/bayDepth)
+          for(const share of [.5,.25,.75,0,1]){
+            const leftLeg=Math.max(.35,Math.min(metres-.35,metres*share))
+            const band=cornerBand(vertex,bay.y,leftLeg,metres-leftLeg)
+            const [left,right]=[band.left.worldPoint(band.a,outer),band.right.worldPoint(band.b,outer)]
+            const frontage=length(left,atVertex(vertex,outer))+length(atVertex(vertex,outer),right)
+            const size=area(band.outline)
+            if(size<minimum-eps||frontage<settings.frontages[ndss[type].beds-1]||!validPolygon(band.outline))continue
+            if(band.runs.some(run=>[...reserved,...cornerBlocks].some(core=>core.side===bay.side&&core.wing===run.wing&&
+              core.run[0]<run.run[1]+defaults.party/2&&core.run[1]>run.run[0]-defaults.party/2)))continue
+            const firstCut=interiors.findIndex(interior=>!band.outline.every(p=>inside(p,interior)))
+            const floors=firstCut<0?block.floors:firstCut
+            if(!floors||best&&best.floors>=floors)continue
+            const x:Span=[band.left.stationAt(band.a,corridorCentre),band.right.stationAt(band.b,corridorCentre)]
+            best={band,floors,unit:{x,bay,type,area:size,minimum,target,outline:band.outline,
+              corridorStations:x,corridorJunctions:[band.left.worldPoint(band.a,edge),band.right.worldPoint(band.b,edge)]}}
+            if(floors===block.floors)break
+          }
+          if(best?.floors===block.floors)break
+        }
+        if(best?.floors===block.floors)break
+      }
+      if(!best)continue
+      cornerBlocks.push(...best.band.runs.map(run=>({...run,side:bay.side})))
+      cornerUnits.push(best)
     }
     const ranges:{zone:Span;eligible:Bay[];wing?:number}[]=[]
     function addRange(zone:Span,eligible:Bay[],wing?:number){
@@ -394,7 +413,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         return retained
       })
       if(floor>0||(config.commercial??0)+(config.communal??0)<100){
-        fitting.push(...cornerUnits.map((unit,index)=>({unit,index:`corner:${index}`})))
+        fitting.push(...cornerUnits.flatMap(({unit,floors},index)=>floor<floors?[{unit,index:`corner:${index}`}]:[]))
       }
       const units=fitting.map(({unit,index})=>({id:`${block.id}:${floor}:${index}`,type:unit.type,
         outline:unit.outline??polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))
@@ -432,21 +451,21 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
   function routeLayout(hrb:boolean):ApartmentResult {
     const minimum=Math.max(bends.length,hrb?config.hrbCores:1)
     const initial=generate(hrb,minimum)
-    if(!initial.ok)return initial
+    if(!initial.ok&&!bends.length)return initial
     const travelLimit=hrb?settings.hrbTravel:settings.nonHrbTravel
     const longest=(layout:Layout)=>Math.max(...layout.floors.map(f=>
       Math.max(f.travel/travelLimit,f.betweenCores/settings.betweenCoreTravel)))
     if(bends.length){
       const usable=(layout:Layout)=>layout.floors.reduce((total,floor)=>
         total+floor.units.reduce((sum,unit)=>sum+unit.area,0),0)
-      let best=initial
+      let best=initial.ok?initial:undefined
       for(let count=minimum;count<=Math.min(28,minimum+Math.ceil(span/Math.min(travelLimit,settings.betweenCoreTravel)));count++){
         const feasible:Layout[]=[]
         function consider(candidate:ApartmentResult){
           if(!candidate.ok||hrb&&candidate.floors.reduce((sum,floor)=>sum+floor.units.length,0)<2)return
           const violation=longest(candidate)
           if(violation<=1+eps)feasible.push(candidate)
-          else if(violation<longest(best)-eps)best=candidate
+          else if(!best||violation<longest(best)-eps)best=candidate
         }
         const shifts=count===minimum?[0]:[0,-.28,.28,-.42,.42]
         for(const shift of shifts){
@@ -468,8 +487,9 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         }
         if(feasible.length)return feasible.reduce((winner,candidate)=>usable(candidate)>usable(winner)+eps?candidate:winner)
       }
-      return best
+      return best??initial
     }
+    if(!initial.ok)return initial
     let best=initial
     for(let count=minimum+1;longest(best)>1+eps;count++){
       const candidate=generate(hrb,count)

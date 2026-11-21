@@ -284,3 +284,16 @@ test('repositioning secondary cores recovers apartment space in a tall L with se
     }
   }
 })
+
+test('an asymmetric corner apartment survives a setback on the shorter wing',()=>{
+  const bend=20*Math.PI/180
+  const block={...rectangle(),line:[[0,0],[50,0],[50+16*Math.cos(bend),16*Math.sin(bend)]] as Block['line'],
+    setbacks:[[0,0],[0,0],[0,12]] as Block['setbacks']}
+  const result=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,nonHrbTravel:85,betweenCoreTravel:85}})
+  assert.ok(result.ok)
+  const corner=result.floors[0].units.find(unit=>unit.outline.length===6)
+  assert.ok(corner&&corner.area>=corner.minimum)
+  for(const floor of result.floors){
+    assert.deepEqual(floor.units.find(unit=>unit.outline.length===6)?.outline,corner.outline)
+  }
+})
