@@ -156,7 +156,8 @@ export function adjustSetback(block:Block,targets:Project['targets'],floor:numbe
   if(!outline)return block
   const apply=(offset:number):Block=>({...block,setbacks:levels(block).map((_,i)=>{
     const values=[...endInset(block,i)] as Point
-    if(i>=floor)values[end]+=offset
+    if(i===floor)values[end]=original+offset
+    else if(i>floor)values[end]=Math.max(values[end],original+offset)
     return values
   })})
   const requested=apply(movement)

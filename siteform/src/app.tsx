@@ -743,7 +743,7 @@ function App(){
               </>:<button type="button" className="primary" onClick={()=>subdivide(selected)}>Subdivide into apartments</button>}
             </div>}
             <div className="property-actions">
-              {tool==='select'&&<span className="vertex-hint">{selectedFloor?'Drag either end to set back this floor and above':selected.type!=='house'&&selected.floors>1?'Drag ground handles or double-click the block to edit floors':'Drag frontage handles to edit'}</span>}
+              {tool==='select'&&<span className="vertex-hint">{selectedFloor?'Drag either end to adjust this floor':selected.type!=='house'&&selected.floors>1?'Drag ground handles or double-click the block to edit floors':'Drag frontage handles to edit'}</span>}
               <Button icon="copy" kind="square" title="Duplicate block" onClick={()=>duplicate(selected)}/>
               <Button icon="trash" kind="square" title="Delete block" onClick={remove}/>
             </div>

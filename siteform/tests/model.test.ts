@@ -182,3 +182,14 @@ test('shared house storey heights drive massing and CSV and distinguish clear ce
   assert.equal(meetsDwellingCeiling(2.6),true)
   assert.equal(meetsDwellingCeiling(2.5),false)
 })
+
+test('a dragged setback only moves upper floors when it passes their existing offsets',()=>{
+  const block={...newBlock(sample,'apartment',[[0,0],[50,0]]),floors:5,
+    setbacks:[[0,0],[2,1],[6,3],[10,4],[14,6]] as [number,number][]}
+  const offsets=(b:Parameters<typeof endInset>[0])=>[1,2,3,4].map(i=>endInset(b,i))
+  const drag=(delta:number)=>adjustSetback(block,sample.targets,2,0,delta,.5)
+  assert.deepEqual(offsets(drag(2)),[[2,1],[8,3],[10,4],[14,6]])
+  assert.deepEqual(offsets(drag(4)),[[2,1],[10,3],[10,4],[14,6]])
+  assert.deepEqual(offsets(drag(6)),[[2,1],[12,3],[12,4],[14,6]])
+  assert.deepEqual(offsets(drag(-20)),[[2,1],[2,3],[10,4],[14,6]])
+})
