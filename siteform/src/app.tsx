@@ -6,7 +6,8 @@ import { draw, home, initialLayers, projection, type Camera, type LegendEntry } 
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadAerial,mapboxToken,type AerialTile} from './aerial'
 import {loadContext,emptyContext,type ContextData} from './context'
-import {blankProject,defaultAddress,isDefaultAddress,restoreProject} from './project'
+import {defaultAddress,isDefaultAddress,siteLocation} from './project'
+import {SiteWorkspace,saveSite,type Site} from './sites'
 import {apartmentLayout,apartmentSettings,areaTarget,defaultApartmentOptions,type ApartmentOptions} from './apartment'
 import {dwellingTypes,ndss,ndssVersion,ndssCeiling} from './ndss'
 import './style.css'
@@ -22,11 +23,6 @@ const tools:{id:Tool;icon:string;name:string}[]=[
   {id:'move',icon:'move',name:'Move'},{id:'rotate',icon:'rotate',name:'Rotate'},
   {id:'measure',icon:'ruler',name:'Measure'}
 ]
-const key='siteform.project.v1'
-function load():Project {
-  try{return restoreProject(localStorage.getItem(key))}
-  catch{return blankProject()}
-}
 const format=(n:number,places=0)=>n.toLocaleString('en-GB',{maximumFractionDigits:places,minimumFractionDigits:places})
 const pointDiff=(p:Point,q:Point):Point=>[p[0]-q[0],p[1]-q[1]]
 type Drag={screen:Point;point:Point;camera:Camera;project:Project;id:string|null;action:'orbit'|'pan'|'move'|'rotate'|'vertices'|'height'|'setback'|'draw';vertex:number;changed:boolean;last:Point;navigation:boolean;floor:number}
@@ -47,11 +43,11 @@ function Panel({title,icon,children,count,initial=true}:{title:string;icon:strin
     <Icon name={icon}/><span>{title}</span>{count!==undefined&&<em>{count}</em>}<Icon size={14} name={open?'chevron':'right'}/>
   </button>{open&&children}</section>
 }
-function App(){
-  const [history,setHistory]=useState(()=>({past:[] as Project[],current:load(),future:[] as Project[]}))
+function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=>void}){
+  const [history,setHistory]=useState(()=>({past:[] as Project[],current:site.project,future:[] as Project[]}))
   const project=history.current
   const atDefault=isDefaultAddress(project.anchor)
-  const locationTitle=atDefault?defaultAddress.street:project.anchor?'Site location':'Unplaced project'
+  const location=siteLocation(project)
   const [selection,setSelection]=useState<string|null>(()=>project.blocks[0]?.id??null)
   const selected=project.blocks.find(b=>b.id===selection)
   const [drawHouseStoreys,setDrawHouseStoreys]=useState<HouseStoreys>(3)
@@ -109,7 +105,14 @@ function App(){
   const [latitude,setLatitude]=useState(String(project.anchor?.lat??defaultAddress.anchor.lat))
   const [longitude,setLongitude]=useState(String(project.anchor?.lon??defaultAddress.anchor.lon))
   const [notice,setNotice]=useState('')
-  const [saved,setSaved]=useState(true)
+  const [stored,setStored]=useState(site.project)
+  const [saveError,setSaveError]=useState('')
+  const [retry,setRetry]=useState(0)
+  const [saving,setSaving]=useState(false)
+  const saved=stored===project&&!saving
+  const persisted=useRef(site.project)
+  const lastSave=useRef(Promise.resolve())
+  const revision=useRef(site.revision)
   const [snap,setSnap]=useState(true)
   const [guide,setGuide]=useState<SnapGuide>()
   const edges=useMemo(()=>snapEdges(project,plan?floor:0),[project,plan,floor])
@@ -153,7 +156,36 @@ function App(){
   if(totals.gia===null)warnings.push('GIA is unavailable where an internal footprint cannot be calculated.')
   if(project.boundary.length<3)warnings.unshift('Draw a site boundary to check containment.')
   const storyCount=Math.max(1,...project.blocks.map(floors))
-  useEffect(()=>{try{localStorage.setItem(key,JSON.stringify(project));setSaved(true)}catch{setSaved(false)}},[project])
+  const reportSave=useEffectEvent((savedSite:Site)=>onSaved(savedSite))
+  useEffect(()=>{
+    let active=true
+    setSaving(true)
+    setSaveError('')
+    lastSave.current=lastSave.current.then(async()=>{
+      if(!active)return
+      try{
+        if(project!==persisted.current){
+          const receipt=await saveSite(site.id,revision.current,project)
+          revision.current=receipt.revision
+          persisted.current=project
+          reportSave({...site,...receipt,project})
+          setStored(project)
+        }
+      }catch(error){
+        if(active)setSaveError(error instanceof Error?error.message:'Cloud save failed.')
+      }finally{
+        if(active)setSaving(false)
+      }
+    })
+    return()=>{active=false}
+  },[project,site,retry])
+  useEffect(()=>{
+    if(saved&&!saveError)return
+    const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue=''}
+    window.addEventListener('beforeunload',warn)
+    return()=>window.removeEventListener('beforeunload',warn)
+  },[saved,saveError])
+  useLayoutEffect(()=>{if(canvas.current&&site.project.boundary.length)fitModel()},[])
   useEffect(()=>{if(!notice)return;const id=setTimeout(()=>setNotice(''),4800);return()=>clearTimeout(id)},[notice])
   useLayoutEffect(()=>{
     if(!canvas.current)return
@@ -534,16 +566,20 @@ function App(){
   const shownFloor=Math.min(floor,storyCount-1)
   return <div className="app">
     <header className="topbar">
+        <div className="editor-site">
+        <Button icon="right" kind="back-to-sites" onClick={()=>{
+          if(saved&&!saveError||saveError&&window.confirm('Return to Sites and leave unsaved changes behind?'))close()
+        }} disabled={!saved&&!saveError}>Sites</Button>
         <div className="site-location">
           <button className="site-title" type="button" aria-expanded={menu==='location'} onClick={()=>setOption('location')}>
-            <span><strong>{locationTitle}</strong><small>{atDefault?defaultAddress.locality:project.anchor?project.anchor.lat.toFixed(5)+'°, '+project.anchor.lon.toFixed(5)+'°':'Set a map location'}</small></span>
+            <span><strong>{site.name}</strong><small>{location?location.lat.toFixed(5)+'°, '+location.lon.toFixed(5)+'°':'Set map origin and draw redline'}</small></span>
             <Icon name="chevron" size={13}/>
           </button>
           {menu==='location'&&<form className="popover location-menu" onSubmit={e=>{e.preventDefault();locate()}}>
-            <strong>Map location</strong>
+            <strong>Map origin</strong>
             <label>Latitude <input aria-label="Latitude" inputMode="decimal" value={latitude} onChange={e=>setLatitude(e.target.value)}/></label>
             <label>Longitude <input aria-label="Longitude" inputMode="decimal" value={longitude} onChange={e=>setLongitude(e.target.value)}/></label>
-            <p>Changing the map origin retains your drawing in local metres.</p>
+            <p>The redline determines the site location. Changing the map origin moves the drawing to new coordinates.</p>
             <button type="submit">Go to coordinates</button>
             {!atDefault&&<button type="button" onClick={()=>{
               const anchor={...defaultAddress.anchor}
@@ -551,9 +587,10 @@ function App(){
               commit({...project,anchor});setCamera(home);setMenu(null)
             }}>Use Bradford Street coordinates</button>}
           </form>}
-        </div>
+        </div></div>
       <div className="top-actions">
-        <span className="save"><Icon name={saved?'check':'warning'} size={15}/>{saved?'Saved locally':'Save unavailable'}</span>
+        {saveError?<button className="save" title={saveError} onClick={()=>setRetry(count=>count+1)}><Icon name="warning" size={15}/>Retry save</button>:
+          <span className="save" role="status"><Icon name={saved?'check':'download'} size={15}/>{saved?'Saved to cloud':'Saving…'}</span>}
         <div className="menu-anchor"><Button icon="download" kind="export" onClick={()=>setOption('export')}>Export<Icon name="chevron" size={13}/></Button>
           {menu==='export'&&<div className="popover export-menu"><button onClick={()=>download('csv')}>Development schedule <small>CSV</small></button><button onClick={()=>download('json')}>Project data <small>JSON</small></button></div>}
         </div>
@@ -836,4 +873,4 @@ function App(){
     </footer>
   </div>
 }
-createRoot(document.getElementById('root')!).render(<App/>)
+createRoot(document.getElementById('root')!).render(<SiteWorkspace editor={(site,close,saved)=><App key={site.id} site={site} close={close} onSaved={saved}/>}/>)

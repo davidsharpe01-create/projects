@@ -1,4 +1,5 @@
 import type {Project} from './model.ts'
+import {geographicPoint} from './geography.ts'
 
 export const defaultAddress={
   street:'321 Bradford Street',
@@ -35,4 +36,21 @@ export function restoreProject(saved:string|null):Project {
     }
   }catch{}
   return blankProject()
+}
+
+export function siteLocation(project:Project){
+  const {anchor,boundary}=project
+  if(!anchor||boundary.length<3)return undefined
+  const [startX,startY]=boundary[0]
+  let area=0,east=0,south=0
+  for(const [i,[x,y]] of boundary.entries()){
+    const [nx,ny]=boundary[(i+1)%boundary.length]
+    const ax=x-startX,ay=y-startY,bx=nx-startX,by=ny-startY
+    const cross=ax*by-bx*ay
+    area+=cross
+    east+=(ax+bx)*cross
+    south+=(ay+by)*cross
+  }
+  if(Math.abs(area)<1e-7)return undefined
+  return geographicPoint(anchor,startX+east/(3*area),startY+south/(3*area))
 }
