@@ -101,6 +101,26 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     const t=(x-stations[i])/(stations[i+1]-stations[i])
     return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]
   }
+  function wingFrame(i:number){
+    const [dx,dy]=directions[i],[ox,oy]=line[i]
+    const projectAlong=([x,y]:Point)=>(x-ox)*dx+(y-oy)*dy
+    const offsetAt=(x:number,y:number)=>projectAlong(point(x,y))
+    const worldPoint=(x:number,y:number):Point=>[ox+x*dx-y*dy,oy+x*dy+y*dx]
+    function stationAt(x:number,y:number){
+      const start=projectAlong(atVertex(i,y)),end=projectAlong(atVertex(i+1,y))
+      return stations[i]+(x-start)*(stations[i+1]-stations[i])/(end-start)
+    }
+    function rectangularRun([a,b]:Span,[near,far]:Span):Span{
+      return [Math.max(offsetAt(a,near),offsetAt(a,far)),Math.min(offsetAt(b,near),offsetAt(b,far))]
+    }
+    function stationBounds([left,right]:Span,[near,far]:Span):Span{
+      return [Math.min(stationAt(left,near),stationAt(left,far)),Math.max(stationAt(right,near),stationAt(right,far))]
+    }
+    function rectangle([left,right]:Span,[near,far]:Span):Point[]{
+      return [worldPoint(left,near),worldPoint(right,near),worldPoint(right,far),worldPoint(left,far)]
+    }
+    return {offsetAt,worldPoint,stationAt,rectangularRun,stationBounds,rectangle}
+  }
   const along=([a,b]:Span,y:number):Point[]=>[a,...bends.map(bend=>bend.x).filter(x=>x>a+eps&&x<b-eps),b].map(x=>point(x,y))
   const polygon=(x:Span,y:Span)=>[...along(x,y[0]),...along(x,y[1]).reverse()]
   // Each ribbon segment interpolates between parallel offsets joined at their miters.
@@ -141,13 +161,28 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
   function generate(hrb:boolean,coreCount:number):ApartmentResult {
     const primaryArea=hrb&&config.hrbCores===1?70:50
     const top=spans.at(-1)!
-    const targets=bends.map(bend=>({...bend,side:double?bend.side:defaultSide}))
-    for(let i=0;targets.length<coreCount;i++){
-      const [lo,hi]=spans[0]
-      const candidates=[lo,...targets.map(target=>target.x).sort((a,b)=>a-b),hi]
-      const gaps=candidates.slice(1).map((x,j)=>({x:(x+candidates[j])/2,size:x-candidates[j]}))
-      const distributed=lo+(hi-lo)*((i+.5)/coreCount+((config.corePosition??50)-50)/100)
-      targets.push({x:bends.length?gaps.sort((a,b)=>b.size-a.size)[0].x:distributed,side:defaultSide})
+    const targets=bends.map(bend=>({...bend,side:double?bend.side:defaultSide,corner:true}))
+    const [lo,hi]=spans[0]
+    if(bends.length){
+      const ends=[lo,...bends.map(bend=>bend.x),hi]
+      const runs=ends.slice(1).map((end,i)=>({start:ends[i],end,extras:0}))
+      for(let remaining=coreCount-bends.length;remaining>0;remaining--){
+        const spacing=(run:typeof runs[number])=>(run.end-run.start)/(run.extras+1)
+        runs.reduce((longest,run)=>spacing(run)>spacing(longest)?run:longest).extras++
+      }
+      runs.forEach(({start,end,extras},i)=>{
+        for(let n=1;n<=extras;n++){
+          const x=start+(end-start)*n/(extras+1)
+          const before=bends[i-1],after=bends[i]
+          const nearest=before&&(!after||x-before.x<=after.x-x)?before:after
+          targets.push({x,side:double?(nearest?.side??defaultSide):defaultSide,corner:false})
+        }
+      })
+    }else{
+      for(let i=0;i<coreCount;i++){
+        const x=lo+(hi-lo)*((i+.5)/coreCount+((config.corePosition??50)-50)/100)
+        targets.push({x,side:defaultSide,corner:false})
+      }
     }
     targets.sort((a,b)=>a.x-b.x)
     const coreAreas=targets.map((_,i)=>i===0?primaryArea:50)
@@ -166,7 +201,6 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     const totalWidth=widths.reduce((sum,width)=>sum+width,0)
     const unfit=spans.findIndex(([a,b])=>b-a<totalWidth+eps)
     if(unfit>=0)return {ok:false,floor:unfit,reason:`Floor ${unfit} cannot fit the ${coreCount===1?primaryArea+' m² core':coreCount+' aligned cores'}.`}
-    const [lo,hi]=spans[0]
     let usedWidth=0,previousEnd=top[0]
     const cores=targets.map(({x,side},i)=>{
       const width=widths[i]
@@ -175,50 +209,68 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       previousEnd=left+width
       return {x:[left,previousEnd] as Span,side}
     })
-    const corePolygons=cores.map(core=>polygon(core.x,coreDepths(core.side)))
-    const totalCoreArea=bends.length?corePolygons.reduce((sum,poly)=>sum+area(poly),0):coreAreas.reduce((sum,value)=>sum+value,0)
     const corridorCentre=(corridorY[0]+corridorY[1])/2
+    // Keep a corner core wrapped around its bend. Cores elsewhere use a
+    // rectangular footprint aligned with their wing and retain their target area.
+    const reserved=cores.map(core=>({x:core.x,side:core.side}))
+    const corePolygons=cores.map((core,index)=>{
+      const y=coreDepths(core.side)
+      if(!bends.length||targets[index].corner)return polygon(core.x,y)
+      const middle=(core.x[0]+core.x[1])/2
+      const wing=segment(middle),frame=wingFrame(wing)
+      const lo=Math.max(top[0],stations[wing],reserved[index-1]?.x[1]??top[0])
+      const hi=Math.min(top[1],stations[wing+1],reserved[index+1]?.x[0]??top[1])
+      const [start,end]=frame.rectangularRun([lo,hi],y)
+      const width=coreAreas[index]/(y[1]-y[0])
+      if(end-start<width-eps)return polygon(core.x,y)
+      const edge=core.side==='front'?y[1]:y[0]
+      const left=Math.max(start,Math.min(end-width,frame.offsetAt(middle,edge)-width/2))
+      const run:Span=[left,left+width]
+      reserved[index].x=frame.stationBounds(run,y)
+      core.x=[frame.stationAt(run[0],corridorCentre),frame.stationAt(run[1],corridorCentre)]
+      return frame.rectangle(run,y)
+    })
+    const totalCoreArea=bends.length?corePolygons.reduce((sum,poly)=>sum+area(poly),0):coreAreas.reduce((sum,value)=>sum+value,0)
     const coreRoutes=cores.slice(1).map((core,i):TravelRoute=>{
       const points=along([cores[i].x[1],core.x[0]],corridorCentre)
       return {points,distance:routeLength(points),betweenCores:true}
     }).filter(route=>route.distance>eps)
     const betweenCores=Math.max(0,...coreRoutes.map(route=>route.distance))
-    const zones:{x:Span;reserved?:Bay['side']}[]=[]
-    let x=lo
-    for(const core of cores){zones.push({x:[x,core.x[0]]},{x:core.x,reserved:core.side});x=core.x[1]}
-    zones.push({x:[x,hi]})
-    const ranges=zones.flatMap(zone=>{
-      const cuts=[zone.x[0],...bends.map(bend=>bend.x).filter(x=>x>zone.x[0]+eps&&x<zone.x[1]-eps),zone.x[1]]
-      return cuts.slice(1).map((end,i)=>({zone:[cuts[i],end] as Span,eligible:bays.filter(bay=>bay.side!==zone.reserved)}))
-    }).filter(({zone})=>zone[1]-zone[0]>eps)
-    const typical=ranges.flatMap(({zone,eligible}):ApartmentBayUnit[]=>{
-      if(!bends.length)return eligible.length?allocate(zone,eligible[0],project,settings).flatMap(unit=>eligible.map(bay=>({...unit,bay}))):[]
-      const i=segment((zone[0]+zone[1])/2)
-      const [dx,dy]=directions[i]
-      const [ox,oy]=line[i]
-      const projectAlong=([x,y]:Point)=>(x-ox)*dx+(y-oy)*dy
-      const offsetAt=(x:number,y:number)=>projectAlong(point(x,y))
-      const worldPoint=(x:number,y:number):Point=>[ox+x*dx-y*dy,oy+x*dy+y*dx]
-      const stationAt=(x:number,y:number)=>{
-        const start=projectAlong(atVertex(i,y)),end=projectAlong(atVertex(i+1,y))
-        return stations[i]+(x-start)*(stations[i+1]-stations[i])/(end-start)
-      }
-      return eligible.flatMap(bay=>{
-        const [a,b]=zone,[near,far]=bay.y
-        // Fit rectangles into the common run at both bay edges. The miters
-        // shape the corridor and core, while party walls follow the façade normal.
-        const run:Span=[Math.max(offsetAt(a,near),offsetAt(a,far)),Math.min(offsetAt(b,near),offsetAt(b,far))]
-        return allocate(run,bay,project,settings).map(unit=>{
-          const [left,right]=unit.x
-          const stationBounds:Span=[Math.min(stationAt(left,near),stationAt(left,far)),
-            Math.max(stationAt(right,near),stationAt(right,far))]
-          const corridorEdge=bay.side==='front'?corridorY[0]:corridorY[1]
-          return {...unit,x:stationBounds,
-            outline:[worldPoint(left,near),worldPoint(right,near),worldPoint(right,far),worldPoint(left,far)],
-            corridorStations:[stationAt(left,corridorCentre),stationAt(right,corridorCentre)],
-            corridorJunctions:[worldPoint(left,corridorEdge),worldPoint(right,corridorEdge)]}
-        })
+    const ranges:{zone:Span;eligible:Bay[]}[]=[]
+    function addRange(zone:Span,eligible:Bay[]){
+      const cuts=[zone[0],...bends.map(bend=>bend.x).filter(x=>x>zone[0]+eps&&x<zone[1]-eps),zone[1]]
+      cuts.slice(1).forEach((end,i)=>{
+        if(end-cuts[i]>eps&&eligible.length)ranges.push({zone:[cuts[i],end],eligible})
       })
+    }
+    if(!bends.length){
+      let x=lo
+      for(const core of cores){
+        addRange([x,core.x[0]],bays)
+        addRange(core.x,bays.filter(bay=>bay.side!==core.side))
+        x=core.x[1]
+      }
+      addRange([x,hi],bays)
+    }else{
+      for(const bay of bays){
+        let x=lo
+        for(const core of reserved.filter(core=>core.side===bay.side)){
+          addRange([x,core.x[0]],[bay])
+          x=Math.max(x,core.x[1])
+        }
+        addRange([x,hi],[bay])
+      }
+    }
+    const typical=ranges.flatMap(({zone,eligible}):ApartmentBayUnit[]=>{
+      if(!bends.length)return allocate(zone,eligible[0],project,settings).flatMap(unit=>eligible.map(bay=>({...unit,bay})))
+      const frame=wingFrame(segment((zone[0]+zone[1])/2))
+      return eligible.flatMap(bay=>allocate(frame.rectangularRun(zone,bay.y),bay,project,settings).map(unit=>{
+        const [left,right]=unit.x
+        const corridorEdge=bay.side==='front'?corridorY[0]:corridorY[1]
+        return {...unit,x:frame.stationBounds(unit.x,bay.y),outline:frame.rectangle(unit.x,bay.y),
+          corridorStations:[frame.stationAt(left,corridorCentre),frame.stationAt(right,corridorCentre)],
+          corridorJunctions:[frame.worldPoint(left,corridorEdge),frame.worldPoint(right,corridorEdge)]}
+      }))
     })
     const available=ranges.flatMap(({zone,eligible})=>eligible.map(bay=>({
       x:[...zone] as Span,bay,areaPerMetre:bends.length?area(polygon(zone,bay.y))/(zone[1]-zone[0]):clearBay

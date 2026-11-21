@@ -190,3 +190,21 @@ test('party walls are perpendicular to the local façade on both sides of an obl
   }
   assert.ok(counts.every(count=>count>0))
 })
+
+test('extra cores on a long L stay rectangular and leave a continuous apartment row opposite',()=>{
+  const block={...rectangle(),line:[[0,0],[90,0],[90,48]] as Block['line']}
+  const answer=solveApartments(block,project)
+  assert.ok(answer.ok)
+  const floor=answer.floors[0]
+  assert.ok(floor.cores.length>1&&floor.cores.length<=4)
+  const wingCores=floor.cores.filter(outline=>outline.length===4)
+  assert.equal(wingCores.length,floor.cores.length-1)
+  for(const [a,b,c,d] of wingCores){
+    assert.ok(Math.abs((b[0]-a[0])*(d[0]-a[0])+(b[1]-a[1])*(d[1]-a[1]))<1e-7)
+    assert.ok(Math.abs(area([a,b,c,d])-50)<1e-7)
+  }
+  const front=floor.units.filter(unit=>unit.outline.every(p=>p[1]<8.25)).sort((a,b)=>a.outline[0][0]-b.outline[0][0])
+  assert.ok(front.length>=4)
+  assert.ok(front.slice(1).every((unit,i)=>unit.outline[0][0]-front[i].outline[1][0]<=.3+1e-7))
+  assert.ok(floor.travel<=30&&floor.betweenCores<=30)
+})
