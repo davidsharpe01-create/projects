@@ -8,8 +8,9 @@
   --line: #dcd8d0;
   --paper: #f7f5f1;
   --wash: #eeeae3;
-  --accent: #ed713d;
-  --accent-dark: #a23c1b;
+  --accent: #235b88;
+  --accent-dark: #19476d;
+  --accent-wash: #e4eff8;
   --white: #fff;
 }
 * { box-sizing: border-box }
@@ -29,15 +30,14 @@ a { color: inherit; text-underline-offset: 3px }
 .site-title small { color: var(--muted); margin-top: 5px; font-size: 12px }
 .site-title:hover strong { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px }
 .save { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; white-space: nowrap; margin-right: 10px }
-.export, .primary { background: var(--accent); color: var(--ink); padding: 9px 13px; min-height: 34px; font-weight: 600; font-size: 13px; white-space: nowrap }
-.export:hover, .primary:hover { background: #f58d60 }
+.export, .primary { background: var(--accent); color: var(--white); padding: 9px 13px; min-height: 34px; font-weight: 600; font-size: 13px; white-space: nowrap }
+.export:hover, .primary:hover { background: var(--accent-dark) }
 .toolbar { padding: 0 20px; gap: 7px; z-index: 6; border-bottom: 1px solid var(--line) }
 .tool { height: 34px; padding: 0 10px; font-size: 13px; white-space: nowrap }
 .tool svg, .segmented svg { width: 16px; height: 16px; flex-shrink: 0 }
 .tool svg:last-child:not(:first-child) { width: 12px; height: 12px }
 .tool:hover, .square:hover, .layer-button:hover { background: var(--paper) }
-.tool.active, .square.active, .layer-button.active { background: #fae0d3; color: #66280f }
-.tool.building-tool.active { background: #e4eff8; color: #235b88 }
+.tool.active, .square.active, .layer-button.active { background: var(--accent-wash); color: var(--accent-dark) }
 .desktop-tools { display: none }
 .tool-divider { border-left: 1px solid var(--line); padding-left: 8px }
 .history { gap: 0 }
@@ -88,7 +88,7 @@ h1 { margin: 0; font-size: 34px; font-weight: 500; letter-spacing: -.055em; line
 .section-label span, .panel-toggle em { color: var(--muted); font-weight: 400; font-size: 11px; font-style: normal }
 .block-row { width: 100%; min-height: 46px; padding: 6px 5px; justify-content: start; text-align: left; gap: 9px }
 .block-row:hover { background: var(--paper) }
-.block-row.selected { box-shadow: inset 2px 0 #235b88; background: #e4eff8 }
+.block-row.selected { box-shadow: inset 2px 0 var(--accent); background: var(--accent-wash) }
 .block-icon { width: 25px; height: 26px; display: grid; place-items: center; flex-shrink: 0 }
 .block-name { display: grid; gap: 2px; margin-right: auto }
 .block-name strong { font-size: 13px; font-weight: 600 }
@@ -205,7 +205,7 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
 .apartment-key i { width: 9px; height: 9px; border: 1px solid #766e62 }
 .apartment-key + .context-status { top: 89px }
 
-.setback-picker.editing select { border-color: #235b88; color: #235b88 }
+.setback-picker.editing select { border-color: var(--accent); color: var(--accent) }
 
 .mapbox-logo { position: absolute; bottom: 4px; left: 7px; line-height: 0 }
 .mapbox-logo img { width: 88px; height: 23px }
