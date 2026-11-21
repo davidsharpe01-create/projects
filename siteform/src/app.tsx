@@ -586,7 +586,7 @@ function App(){
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['context','Existing buildings'],['aerial','Aerial imagery'],['streets','Street names'],['travel','Travel distances'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>id==='aerial'?!!(anchor&&mapboxToken):id!=='context'&&id!=='streets'||!!anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
+            {([['context','Existing buildings'],['aerial','Aerial imagery'],['streets','Street names'],['travel','Travel distances'],['grid','10 m grid']] as const).filter(([id])=>id==='aerial'?!!(anchor&&mapboxToken):id!=='context'&&id!=='streets'||!!anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
               if(id==='aerial'&&!e.target.checked)setImagery(undefined)
               setLayers({...layers,[id]:e.target.checked})
               if(id==='context'&&!e.target.checked&&(tool==='ghost'||tool==='show'))choose('select')
@@ -612,6 +612,15 @@ function App(){
             <Button icon="target" title="Fit model" onClick={fitModel}/>
           </div>
         </div>
+        {plan&&<label className="floor-picker">Floor
+          <select value={shownFloor} onChange={e=>{
+            const next=Number(e.target.value)
+            setFloor(next)
+            setEditFloor(selected&&selected.type!=='house'&&next<floors(selected)?next:0)
+          }}>
+            {Array.from({length:storyCount},(_,i)=><option key={i} value={i}>{i===0?'Ground':i}</option>)}
+          </select>
+        </label>}
         {actions[tool]&&<div className="draw-message">
           <span>{tool==='measure'&&draft.length===2?format(length(...draft as [Point,Point]),2)+' m':actions[tool]}</span>
           {tool==='house'&&<label className="house-storeys">Storeys <select value={drawHouseStoreys} onChange={e=>setDrawHouseStoreys(Number(e.target.value) as HouseStoreys)}><option value={2}>2 · 5.5 m</option><option value={3}>3 · 4.5 m</option></select></label>}

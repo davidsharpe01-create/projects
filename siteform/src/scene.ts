@@ -10,8 +10,8 @@ const coreFill='#b8babc'
 const editingBlue='#235b88'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
-export type Layers = {context:boolean; streets:boolean; aerial:boolean; travel:boolean; grid:boolean; labels:boolean}
-export const initialLayers:Layers={context:true,streets:true,aerial:true,travel:true,grid:false,labels:true}
+export type Layers = {context:boolean; streets:boolean; aerial:boolean; travel:boolean; grid:boolean}
+export const initialLayers:Layers={context:true,streets:true,aerial:true,travel:true,grid:false}
 export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const angle=plan?0:c.angle
   const s=Math.min(w/185,h/(plan?133:108))*c.zoom
@@ -210,9 +210,9 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     }else{
       polys.forEach(poly=>face(poly,z,material,levels(b,project.houseHeights),b.id,plan?0:b.level))
     }
-    if(group.length&&(b.id===selected||(plan&&layers.labels))){
+    if(!plan&&group.length&&b.id===selected){
       let center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)
-      if(!plan&&editFrontage&&b.id===selected&&b.type!=='house'){
+      if(editFrontage&&b.type!=='house'){
         if(!inside(center,group)){
           const indices=earcut(group.flat())
           let largest=0

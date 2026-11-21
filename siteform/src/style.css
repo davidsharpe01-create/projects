@@ -204,3 +204,7 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
 .mapbox-logo img { width: 88px; height: 23px }
 .aerial-status { position: absolute; bottom: 32px; left: 9px; background: var(--white); padding: 5px 7px; font-size: 11px }
 .aerial-status button { text-decoration: underline }
+
+.floor-picker { position: absolute; top: 17px; left: 17px; display: flex; align-items: center; gap: 8px; background: var(--white); padding: 5px 8px; font-size: 12px; border: 1px solid var(--line) }
+.floor-picker select { border: 1px solid var(--line); background: var(--white); padding: 4px }
+.floor-picker ~ .context-status { top: 60px }
