@@ -158,7 +158,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     const front=endLimits(insets,E),rear=endLimits(insets,D-E)
     return [Math.max(front[0],rear[0]),Math.min(front[1],rear[1])]
   })
-  function generate(hrb:boolean,coreCount:number,shift=0,preferNextWing=false):ApartmentResult {
+  function generate(hrb:boolean,coreCount:number,shift=0,preferNextWing=false,oppositeRun=-1,alternateShift=false):ApartmentResult {
     const primaryArea=hrb&&config.hrbCores===1?70:50
     const top=spans.at(-1)!
     const targets=bends.map(bend=>({...bend,side:double?bend.side:defaultSide,corner:true}))
@@ -172,10 +172,12 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       }
       runs.forEach(({start,end,extras},i)=>{
         for(let n=1;n<=extras;n++){
-          const x=start+(end-start)*(n+shift)/(extras+1)
+          const offset=alternateShift&&i%2?-shift:shift
+          const x=start+(end-start)*(n+offset)/(extras+1)
           const before=bends[i-1],after=bends[i]
           const nearest=before&&(!after||x-before.x<=after.x-x)?before:after
-          const side=double?(nearest?.side??defaultSide):defaultSide
+          const preferred=double?(nearest?.side??defaultSide):defaultSide
+          const side=double&&i===oppositeRun?(preferred==='front'?'rear':'front'):preferred
           targets.push({x,side,corner:false})
         }
       })
@@ -384,14 +386,28 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       let best=initial
       for(let count=minimum;count<=Math.min(28,minimum+Math.ceil(span/Math.min(travelLimit,settings.betweenCoreTravel)));count++){
         const feasible:Layout[]=[]
+        function consider(candidate:ApartmentResult){
+          if(!candidate.ok||hrb&&candidate.floors.reduce((sum,floor)=>sum+floor.units.length,0)<2)return
+          const violation=longest(candidate)
+          if(violation<=1+eps)feasible.push(candidate)
+          else if(violation<longest(best)-eps)best=candidate
+        }
         const shifts=count===minimum?[0]:[0,-.28,.28,-.42,.42]
         for(const shift of shifts){
           for(const nextWing of [false,true]){
-            const candidate=count===minimum&&!nextWing?initial:generate(hrb,count,shift,nextWing)
-            if(!candidate.ok||hrb&&candidate.floors.reduce((sum,floor)=>sum+floor.units.length,0)<2)continue
-            const violation=longest(candidate)
-            if(violation<=1+eps)feasible.push(candidate)
-            else if(violation<longest(best)-eps)best=candidate
+            consider(count===minimum&&!nextWing?initial:generate(hrb,count,shift,nextWing))
+          }
+        }
+        if(count>minimum){
+          // Keep secondary cores on one side of each wing so the opposite
+          // apartment row stays continuous.
+          const oppositeRuns=double?[-1,...bends.map((_,i)=>i),bends.length]:[-1]
+          for(const shift of [0,-.34,.34]){
+            for(const nextWing of [false,true]){
+              for(const oppositeRun of oppositeRuns){
+                if(shift!==0||oppositeRun!==-1)consider(generate(hrb,count,shift,nextWing,oppositeRun,true))
+              }
+            }
           }
         }
         if(feasible.length)return feasible.reduce((winner,candidate)=>usable(candidate)>usable(winner)+eps?candidate:winner)

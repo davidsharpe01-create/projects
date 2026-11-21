@@ -235,3 +235,17 @@ test('tall L with setbacks keeps cores square, aligned and within travel limits'
     }
   }
 })
+
+test('repositioning secondary cores recovers apartment space in a tall L with setbacks',()=>{
+  const block={...rectangle(),floors:11,line:[[0,0],[100,0],[100,60]] as Block['line'],
+    setbacks:[[0,0],[0,0],[14,10]] as Block['setbacks']}
+  const result=solveApartments(block,project)
+  assert.ok(result.ok&&result.hrb)
+  const apartments=result.floors.flatMap(floor=>floor.units)
+  assert.ok(apartments.length>=188)
+  assert.ok(apartments.reduce((sum,unit)=>sum+unit.area,0)>11900)
+  for(const floor of result.floors){
+    assert.deepEqual(floor.cores,result.floors[0].cores)
+    assert.ok(floor.travel<=15&&floor.betweenCores<=30)
+  }
+})
