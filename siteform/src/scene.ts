@@ -5,7 +5,7 @@ import type {SnapGuide} from './snap'
 import type {AerialTile} from './aerial'
 import {roadWidths,type ContextData} from './context'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
-import { footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
+import { blockTypes, footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
 const coreFill='#b8babc'
 const editingBlue='#235b88'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
@@ -25,6 +25,7 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
   return {project,invert,s,depth}
 }
+export type LegendEntry={label:string;colour:string;outline?:boolean}
 type Scene = {showApartments:boolean; camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; drawBuilding:boolean; editBoundary:boolean; drafting?:boolean; context:ContextData; aerial:AerialTile[]; ghosted:ReadonlySet<number>}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
@@ -65,7 +66,16 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       world([[-300,i],[300,i]],undefined,'#64776d44',.8,false)
     }
   }
+  const legend=new Map<string,LegendEntry>()
+  function inView(points:Point[]){
+    return points.length>0&&points.some(([x])=>x>=0)&&points.some(([x])=>x<=w)&&
+      points.some(([,y])=>y>=0)&&points.some(([,y])=>y<=h)
+  }
+  function key(label:string,colour:string,shape:Point[],z=0,outline=false){
+    if(!legend.has(label)&&inView(shape.map(p=>xy(p,z))))legend.set(label,{label,colour,outline})
+  }
   const boundary=project.boundary
+  key('Site boundary','#ad574e',boundary,0,true)
   world(boundary,project.anchor?'#ead7be72':'#e9dbc7','#ad574e',2.1)
   type Drawable=Surface & {paint:()=>void;alpha?:number;bounds:[number,number,number,number]}
   const surfaces:Drawable[]=[]
@@ -113,12 +123,19 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
           if(outlineOnly)return
           path(top,material.roof,material.line,id&&id===selected?1.75:.8)
           if(!layout)return
-          world(layout.corridor,'#e7e4dd','#a9a298',.7,true,z)
-          layout.cores.forEach(core=>world(core,coreFill,'#727678',.8,true,z))
-          layout.uses.forEach(use=>world(use.outline,use.kind==='commercial'?'#dec4a2':'#c8c5ad','#8c8173',.7,true,z))
-          layout.units.forEach(unit=>world(unit.outline,project.apartmentSettings?.colours?.[unit.type]??ndss[unit.type].colour,'#66615b',.65,true,z))
+          const detail=(label:string,shape:Point[],fill:string,stroke:string,width:number)=>{
+            key(label,fill,shape,z)
+            world(shape,fill,stroke,width,true,z)
+          }
+          detail('Corridor',layout.corridor,'#e7e4dd','#a9a298',.7)
+          layout.cores.forEach(core=>detail('Core',core,coreFill,'#727678',.8))
+          layout.uses.forEach(use=>detail(use.kind==='commercial'?'Commercial':'Communal',use.outline,
+            use.kind==='commercial'?'#dec4a2':'#c8c5ad','#8c8173',.7))
+          layout.units.forEach(unit=>detail(unit.type,unit.outline,
+            project.apartmentSettings?.colours?.[unit.type]??ndss[unit.type].colour,'#66615b',.65))
           if(layers.travel&&showTravel&&id===selected){
             const red='#a52d28'
+            layout.travelRoutes.forEach(route=>key('Travel distance',red,route.points,z,true))
             const annotations=layout.travelRoutes.map(route=>{
               const points=route.points.map(p=>xy(p,z))
               ctx.setLineDash(route.betweenCores?[5,3]:[])
@@ -151,6 +168,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     const [outline,...holes]=building.rings
     const ghost=scene.ghosted.has(index)
     const outlineOnly=plan||building.height===0||ghost
+    key(ghost?'Ghosted buildings':'Existing buildings',outlineOnly?contextMaterial.line:contextMaterial.roof,
+      outline,plan?0:building.height,outlineOnly)
     if(outlineOnly){
       ctx.save()
       if(ghost){ctx.setLineDash([1,4]);ctx.globalAlpha=.68}
@@ -176,6 +195,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     const stack=!plan&&b.id===selected&&scene.showApartments&&!!b.apartmentLayout
     const [roof,...walls]=useTints[b.type]
     const material={...white,roof:b.type==='house'?`color-mix(in srgb, ${project.colours[b.houseType]} 24%, #fff)`:roof,walls,line:b.id===selected?editingBlue:white.line}
+    const firstSurface=surfaces.length
     let group=polys.flat()
     if(stack&&polys[0]){
       const outline=polys[0],storeys=levels(b,project.houseHeights)
@@ -209,6 +229,11 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       }
     }else{
       polys.forEach(poly=>face(poly,z,material,levels(b,project.houseHeights),b.id,plan?0:b.level))
+    }
+    if(surfaces.length>firstSurface&&!(plan&&validLayout?.floors[floor])){
+      const label=blockTypes[b.type].legend
+      const colour=walls[0]
+      if(!legend.has(label))legend.set(label,{label,colour})
     }
     if(!plan&&group.length&&b.id===selected){
       let center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)
@@ -354,7 +379,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.beginPath();ctx.arc(...p,r,0,2*Math.PI);ctx.fillStyle='#fffdf5';ctx.fill()
     ctx.strokeStyle=colour;ctx.lineWidth=2;ctx.stroke()
   }
-  return {pick:(point:Point)=>pickSurface(solidSurfaces,point),handles,
+  return {legend:[...legend.values()],pick:(point:Point)=>pickSurface(solidSurfaces,point),handles,
     pickContext:(point:Point)=>visibleSurface(solidSurfaces,point)?.contextIndex,
     pickGhost:(point:Point)=>visibleSurface(surfaces.filter(surface=>
       surface.contextIndex!==undefined&&scene.ghosted.has(surface.contextIndex)),point)?.contextIndex,

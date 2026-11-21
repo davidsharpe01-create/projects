@@ -61,12 +61,9 @@ canvas.drawing { cursor: crosshair }
 .map-controls button+button { border-top: 1px solid var(--line) }
 .map-controls svg { width: 16px; height: 16px }
 .map-legend { position: absolute; left: 17px; bottom: 17px; max-width: calc(100% - 125px); display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 8px 10px; background: var(--white); border: 1px solid var(--line); font-size: 11px; pointer-events: none }
+.workspace:has(.mapbox-logo) .map-legend { bottom: 34px }
 .map-legend span { display: flex; align-items: center; gap: 6px; white-space: nowrap }
-.map-legend i { width: 9px; height: 9px; display: inline-block }
-.map-legend .redline { border: 1px solid #ad574e; background: #f2e3d7 }
-.map-legend .apartment { background: #8aafa0 }
-.map-legend .office { background: #829ab7 }
-.map-legend .pbsa { background: #a291bb }
+.map-legend i { width: 9px; height: 9px; display: inline-block; border: 1px solid #0002 }
 .map-scale { position: absolute; bottom: 20px; right: 17px; display: grid; justify-items: center; gap: 3px; font-size: 10px; pointer-events: none }
 .map-scale i { height: 5px; border: 1px solid var(--ink); border-top: 0 }
 .draw-message, .notice { position: absolute; left: 50%; transform: translateX(-50%); bottom: 60px; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; background: var(--white); border: 1px solid var(--line); font-size: 12px; width: max-content; max-width: calc(100% - 110px) }

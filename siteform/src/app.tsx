@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, 
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, editGroundFrontage, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
-import { draw, home, initialLayers, projection, type Camera } from './scene'
+import { draw, home, initialLayers, projection, type Camera, type LegendEntry } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadAerial,mapboxToken,type AerialTile} from './aerial'
 import {loadContext,emptyContext,type ContextData} from './context'
@@ -116,7 +116,8 @@ function App(){
   const setbackEdges=useMemo(()=>selectedFloor?snapEdges(project,selectedFloor):[],[project,selectedFloor])
   const [size,setSize]=useState(0)
   const canvas=useRef<HTMLCanvasElement>(null)
-  const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,pickContext:()=>undefined,pickGhost:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
+  const [legend,setLegend]=useState<LegendEntry[]>([])
+  const scene=useRef<ReturnType<typeof draw>>({legend:[],pick:()=>null,pickContext:()=>undefined,pickGhost:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
   const drawingClick=useRef<Point|null>(null)
   const totals=development(project)
@@ -161,7 +162,11 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)scene.current=draw(canvas.current,{showApartments,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
+    if(!canvas.current)return
+    scene.current=draw(canvas.current,{showApartments,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
+    const entries=scene.current.legend
+    setLegend(previous=>previous.length===entries.length&&previous.every((item,i)=>
+      item.label===entries[i].label&&item.colour===entries[i].colour&&item.outline===entries[i].outline)?previous:entries)
   },[showApartments,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
   function commit(next:Project,trimUpper=false){
     for(const block of next.blocks){
@@ -631,8 +636,11 @@ function App(){
           <Button icon="close" kind="square" title="Exit tool" onClick={()=>choose('select')}/>
         </div>}
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
-        {(project.boundary.length>0||project.blocks.length>0)&&<div className="map-legend">{project.boundary.length>0&&<span><i className="redline"/>Site boundary</span>}{(['apartment','house','office','pbsa'] as const).filter(type=>project.blocks.some(b=>b.type===type)).map(type=>
-          <span key={type}><i className={type} style={type==='house'?{background:project.colours['3B5P']}:undefined}/>{blockTypes[type].legend}</span>)}</div>}
+        {legend.length>0&&<div className="map-legend" aria-label="Map key">
+          {legend.map(({label,colour,outline})=><span key={label}>
+            <i style={outline?{borderColor:colour,borderStyle:'solid',borderWidth:1}:{background:colour}}/>{label}
+          </span>)}
+        </div>}
         {anchor&&(showContext||aerial)&&<>
           {showContext&&(contextStatus?.status!=='ready'||!(layers.context&&contextStatus.data.buildings.length||layers.streets&&contextStatus.data.streetNames.length))
             ?<div className="context-status" role="status">
