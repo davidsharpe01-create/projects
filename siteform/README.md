@@ -19,7 +19,7 @@ Draw in either 3D or Plan. On wide screens, the toolbar shows each drawing and e
 
 ## Architecture and measurements
 
-React manages workspace state and undo transactions. The TypeScript geometry model calculates footprints, site containment and areas independently. A Canvas renderer projects local geometry into 3D and plan and exposes hit targets for block selection. OpenFreeMap vector tiles supply existing building context, roads and street names around the saved location. **Streets** controls road lines and names independently of the building layer. Road widths are indicative. Choose **Ghost** in the main toolbar and click context buildings to show dotted outlines for the session. Use **Show** to restore individual buildings or **Layers → Restore all existing buildings** to restore them together. Turn it off under **Display layers → Existing buildings**. Heights are indicative. Local storage keeps a single design option.
+React manages workspace state and undo transactions. The TypeScript geometry model calculates footprints, site containment and areas independently. A Canvas renderer projects local geometry into 3D and plan and exposes hit targets for block selection. Mapbox Satellite supplies a faded aerial layer. Mapbox Streets v8 supplies existing building footprints and indicative heights, with OpenFreeMap as the fallback. OpenFreeMap supplies street names. **Aerial imagery**, **Street names** and **Existing buildings** can be toggled independently. Choose **Ghost** in the main toolbar and click context buildings to show dotted outlines for the session. Use **Show** to restore individual buildings or **Layers → Restore all existing buildings** to restore them together. Turn it off under **Display layers → Existing buildings**. Heights are indicative. Local storage keeps a single design option.
 
 External floor area is the footprint measured to the outside face on each floor. House usable area is measured to internal faces, with 600 mm external walls and 300 mm party walls apportioned to adjacent units. All units use the typology depth set by an internal terraced unit. End units stay flush with the run and consequently have less usable area. Complete 4.5 m units fit independently on each straight segment. The overview shows indicative gross internal area (GIA) for all blocks, measured inside the modelled external walls and including internal partitions. Office and PBSA start at editable depths of 18 m and 16 m respectively. PBSA bed counts are pending.
 
@@ -27,7 +27,7 @@ Select an apartment block and choose **Subdivide into apartments** to generate a
 
 ## Cloudflare Pages
 
-The `siteform` Pages project deploys from `main` in the Git repository. The build root is `siteform`, the command is `npm run build`, and the output is `public`.
+The `siteform` Pages project deploys from `main` in the Git repository. The build root is `siteform`, the command is `npm run build`, and the output is `public`. Set `MAPBOX_PUBLIC_TOKEN` in the production build environment to enable Mapbox. Restrict the public token to the app origin in the Mapbox dashboard.
 
 ## Later phases
 

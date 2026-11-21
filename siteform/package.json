@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/app.tsx --bundle --minify --jsx=automatic --define:process.env.NODE_ENV='\"production\"' --outfile=public/app.js",
+    "build": "node build.mjs",
     "test": "node --test --test-isolation=none",
     "preview": "python3 -m http.server 4173 --bind 0.0.0.0 --directory public"
   },

@@ -4,6 +4,7 @@ import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
+import {loadAerial,mapboxToken,type AerialTile} from './aerial'
 import {loadContext,emptyContext,type ContextData} from './context'
 import {blankProject,defaultAddress,isDefaultAddress,restoreProject} from './project'
 import {apartmentLayout,apartmentSettings,areaTarget,defaultApartmentOptions,type ApartmentOptions} from './apartment'
@@ -74,12 +75,29 @@ function App(){
     const controller=new AbortController()
     setNearby({anchor,data:emptyContext,status:'loading'})
     loadContext(anchor,controller.signal).then(data=>{
-      if(!controller.signal.aborted)setNearby({anchor,data,status:'ready'})
+      if(!controller.signal.aborted){setNearby({anchor,data,status:'ready'});setGhosted(new Set())}
     }).catch(()=>{
       if(!controller.signal.aborted)setNearby({anchor,data:emptyContext,status:'unavailable'})
     })
     return()=>controller.abort()
   },[showContext,anchor,contextAttempt])
+  const [imagery,setImagery]=useState<{anchor:NonNullable<Project['anchor']>;tiles:AerialTile[];status:'loading'|'ready'|'unavailable'}>()
+  const aerial=layers.aerial&&imagery?.anchor===anchor?imagery:undefined
+  useEffect(()=>{
+    if(!layers.aerial||!anchor||!mapboxToken)return
+    const controller=new AbortController()
+    let tiles:AerialTile[]=[]
+    setImagery({anchor,tiles,status:'loading'})
+    loadAerial(anchor,controller.signal).then(result=>{
+      if(controller.signal.aborted){result.forEach(tile=>tile.image.close());return}
+      tiles=result
+      setImagery({anchor,tiles,status:tiles.length?'ready':'unavailable'})
+    })
+    return()=>{
+      controller.abort()
+      tiles.forEach(tile=>tile.image.close())
+    }
+  },[layers.aerial,anchor,contextAttempt])
   const [opacity,setOpacity]=useState(1)
   const [draft,setDraft]=useState<Point[]>([])
   const [pointer,setPointer]=useState<Point|null>(null)
@@ -140,8 +158,8 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,ghosted,drafting:!!preview})
-  },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,ghosted])
+    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
+  },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
   function commit(next:Project,trimUpper=false){
     for(const block of next.blocks){
       const layout=apartmentLayout(block,next)
@@ -549,7 +567,8 @@ function App(){
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['context','Existing buildings'],['streets','Streets'],['hrb','Higher-risk highlight'],['travel','Travel distances'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>(id!=='context'&&id!=='streets')||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
+            {([['context','Existing buildings'],['aerial','Aerial imagery'],['streets','Street names'],['hrb','Higher-risk highlight'],['travel','Travel distances'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>id==='aerial'?!!(anchor&&mapboxToken):id!=='context'&&id!=='streets'||!!anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
+              if(id==='aerial'&&!e.target.checked)setImagery(undefined)
               setLayers({...layers,[id]:e.target.checked})
               if(id==='context'&&!e.target.checked&&(tool==='ghost'||tool==='show'))choose('select')
             }}/>{label}</label>)}
@@ -595,16 +614,23 @@ function App(){
           {selectedLayout.floors[shownFloor].uses.some(use=>use.kind==='commercial')&&<span><i style={{background:'#dec4a2'}}/>Commercial</span>}
           {selectedLayout.floors[shownFloor].uses.some(use=>use.kind==='communal')&&<span><i style={{background:'#c8c5ad'}}/>Communal</span>}
         </div>}
-        {anchor&&showContext&&<>
-          {contextStatus?.status!=='ready'||!(layers.context&&contextStatus.data.buildings.length||layers.streets&&contextStatus.data.roads.length)
+        {anchor&&(showContext||aerial)&&<>
+          {showContext&&(contextStatus?.status!=='ready'||!(layers.context&&contextStatus.data.buildings.length||layers.streets&&contextStatus.data.streetNames.length))
             ?<div className="context-status" role="status">
               {contextStatus?.status==='unavailable'?<>Map context unavailable <button type="button" onClick={()=>retryContext(n=>n+1)}>Retry</button></>:
                 contextStatus?.status==='ready'?'No map context found':'Loading map context…'}
             </div>:null}
+          {aerial?.status==='unavailable'&&<div className="aerial-status" role="status">Aerial imagery unavailable <button type="button" onClick={()=>retryContext(n=>n+1)}>Retry</button></div>}
+          {(aerial?.tiles.length||layers.context&&contextStatus?.data.provider==='mapbox')?<a className="mapbox-logo" href="https://www.mapbox.com/" target="_blank" rel="noreferrer"><img src="./mapbox-logo.svg" alt="Mapbox"/></a>:null}
           <div className="attribution" title="Indicative building heights">
-            <a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a>
-            {' · '}<a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">© OpenMapTiles</a>
-            {' · '}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
+            {showContext&&<><a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a>
+            {' · '}<a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">© OpenMapTiles</a>{' · '}</>}
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
+            {(aerial?.tiles.length||layers.context&&contextStatus?.data.provider==='mapbox')?<>
+              {' · '}<a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noreferrer">© Mapbox</a>
+              {!!aerial?.tiles.length&&<>{' · '}<a href="https://www.maxar.com/" target="_blank" rel="noreferrer">© Maxar</a></>}
+              {' · '}<a href={`https://apps.mapbox.com/feedback/#/${anchor.lon}/${anchor.lat}/17`} target="_blank" rel="noreferrer">Improve this map</a>
+            </>:null}
           </div>
         </>}
         <div className="map-scale"><span>{scaleMetres} m</span><i style={{width:scaleMetres*scale}}/></div>

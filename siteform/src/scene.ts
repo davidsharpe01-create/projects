@@ -2,14 +2,15 @@ import earcut from 'earcut'
 import {apartmentLayout,type ApartmentFloor} from './apartment'
 import {ndss} from './ndss'
 import type {SnapGuide} from './snap'
+import type {AerialTile} from './aerial'
 import {roadWidths,type ContextData} from './context'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
 import { footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
 const editingBlue='#235b88'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
-export type Layers = {context:boolean; streets:boolean; hrb:boolean; travel:boolean; grid:boolean; labels:boolean}
-export const initialLayers:Layers={context:true,streets:true,hrb:true,travel:true,grid:false,labels:true}
+export type Layers = {context:boolean; streets:boolean; aerial:boolean; hrb:boolean; travel:boolean; grid:boolean; labels:boolean}
+export const initialLayers:Layers={context:true,streets:true,aerial:true,hrb:true,travel:true,grid:false,labels:true}
 export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const angle=plan?0:c.angle
   const s=Math.min(w/185,h/(plan?133:108))*c.zoom
@@ -23,7 +24,7 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
   return {project,invert,s,depth}
 }
-type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; drawBuilding:boolean; editBoundary:boolean; drafting?:boolean; context:ContextData; ghosted:ReadonlySet<number>}
+type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; drawBuilding:boolean; editBoundary:boolean; drafting?:boolean; context:ContextData; aerial:AerialTile[]; ghosted:ReadonlySet<number>}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
@@ -43,19 +44,25 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.stroke()}
   }
   const world=(p:Point[],fill?:string,stroke?:string,width=1,close=true,z=0)=>path(p.map(a=>xy(a,z)),fill,stroke,width,close)
+  if(layers.aerial&&scene.aerial.length){
+    ctx.save()
+    ctx.globalAlpha=.34
+    for(const {image,origin,width} of scene.aerial){
+      const [x,y]=xy(origin)
+      const [eastX,eastY]=xy([origin[0]+width,origin[1]])
+      const [southX,southY]=xy([origin[0],origin[1]+width])
+      ctx.save()
+      ctx.transform(eastX-x,eastY-y,southX-x,southY-y,x,y)
+      ctx.drawImage(image,0,0,1,1)
+      ctx.restore()
+    }
+    ctx.restore()
+  }
   if(layers.grid){
     for(let i=-300;i<=300;i+=10){
       world([[i,-300],[i,300]],undefined,'#64776d44',.8,false)
       world([[-300,i],[300,i]],undefined,'#64776d44',.8,false)
     }
-  }
-  if(layers.streets){
-    const roads=scene.context.roads.map(({line,kind})=>({
-      points:line.map(p=>xy(p)),
-      width:Math.max(1.2,Math.min(22,roadWidths[kind]*s*(plan?.36:.26)))
-    }))
-    for(const {points,width} of roads)path(points,undefined,'#d0c9bc',width+1.4,false)
-    for(const {points,width} of roads)path(points,undefined,'#faf8f2',width,false)
   }
   const boundary=project.boundary
   world(boundary,project.anchor?'#ead7be72':'#e9dbc7','#ad574e',2.1)

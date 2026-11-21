@@ -14,3 +14,14 @@ export function mapFrame(anchor:Anchor,zoom:number) {
     count
   }
 }
+
+export function mapTiles(frame:ReturnType<typeof mapFrame>,radius:number) {
+  const tiles:{x:number;y:number;wrappedX:number}[]=[]
+  const range=radius/frame.width
+  for(let x=Math.floor(frame.x-range);x<=Math.floor(frame.x+range);x++){
+    for(let y=Math.max(0,Math.floor(frame.y-range));y<=Math.min(frame.count-1,Math.floor(frame.y+range));y++){
+      tiles.push({x,y,wrappedX:(x%frame.count+frame.count)%frame.count})
+    }
+  }
+  return tiles
+}

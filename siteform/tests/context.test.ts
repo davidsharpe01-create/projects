@@ -4,7 +4,7 @@ import {PbfWriter} from 'pbf'
 import {area} from '../src/model.ts'
 import {readContextTile} from '../src/context.ts'
 
-export function buildingTile(x:number,y:number,includeRoads=false) {
+export function buildingTile(x:number,y:number,includeRoads=false,mapbox=false) {
   const writer=new PbfWriter()
   writer.writeMessage(3,(_,layer)=>{
     layer.writeStringField(1,'building')
@@ -28,8 +28,8 @@ export function buildingTile(x:number,y:number,includeRoads=false) {
       }
       feature.writePackedVarint(4,geometry)
     },null)
-    layer.writeStringField(3,'render_height')
-    layer.writeStringField(3,'render_min_height')
+    layer.writeStringField(3,mapbox?'height':'render_height')
+    layer.writeStringField(3,mapbox?'min_height':'render_min_height')
     for(const number of [18,2])layer.writeMessage(4,(n,value)=>value.writeVarintField(5,n),number)
     layer.writeVarintField(5,4096)
     layer.writeVarintField(15,2)
@@ -78,4 +78,11 @@ test('road and name layers share the building coordinate frame and filter rail a
   assert.deepEqual(roads[0].line,streetNames[0].line)
   assert.equal(roads[0].line[0][0],0)
   assert.ok(roads[0].line[0][1]>0)
+})
+
+test('Mapbox Streets height and base use the same local coordinates as OpenFreeMap',()=>{
+  const anchor={lat:0,lon:0}
+  const mapbox=readContextTile(buildingTile(0,0,false,true),anchor,15,16384,16384,true)
+  const open=readContextTile(buildingTile(0,0),anchor,15,16384,16384)
+  assert.deepEqual(mapbox.buildings,open.buildings)
 })

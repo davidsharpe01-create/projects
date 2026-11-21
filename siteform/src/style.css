@@ -206,3 +206,8 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
 .apartment-key + .context-status { top: 89px }
 
 .setback-picker.editing select { border-color: #235b88; color: #235b88 }
+
+.mapbox-logo { position: absolute; bottom: 4px; left: 7px; line-height: 0 }
+.mapbox-logo img { width: 88px; height: 23px }
+.aerial-status { position: absolute; bottom: 32px; left: 9px; background: var(--white); padding: 5px 7px; font-size: 11px }
+.aerial-status button { text-decoration: underline }
