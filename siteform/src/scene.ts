@@ -10,8 +10,8 @@ const coreFill='#b8babc'
 const editingBlue='#235b88'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
-export type Layers = {context:boolean; streets:boolean; aerial:boolean; hrb:boolean; travel:boolean; grid:boolean; labels:boolean}
-export const initialLayers:Layers={context:true,streets:true,aerial:true,hrb:true,travel:true,grid:false,labels:true}
+export type Layers = {context:boolean; streets:boolean; aerial:boolean; travel:boolean; grid:boolean; labels:boolean}
+export const initialLayers:Layers={context:true,streets:true,aerial:true,travel:true,grid:false,labels:true}
 export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const angle=plan?0:c.angle
   const s=Math.min(w/185,h/(plan?133:108))*c.zoom
@@ -175,7 +175,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     const validLayout=layout?.ok?layout:undefined
     const stack=!plan&&b.id===selected&&scene.showApartments&&!!b.apartmentLayout
     const [roof,...walls]=useTints[b.type]
-    const material={...white,roof:b.type==='house'?`color-mix(in srgb, ${project.colours[b.houseType]} 24%, #fff)`:roof,walls,line:b.id===selected?editingBlue:!plan&&layers.hrb&&validLayout?.hrb?'#894864':white.line}
+    const material={...white,roof:b.type==='house'?`color-mix(in srgb, ${project.colours[b.houseType]} 24%, #fff)`:roof,walls,line:b.id===selected?editingBlue:white.line}
     let group=polys.flat()
     if(stack&&polys[0]){
       const outline=polys[0],storeys=levels(b,project.houseHeights)

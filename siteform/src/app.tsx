@@ -586,7 +586,7 @@ function App(){
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['context','Existing buildings'],['aerial','Aerial imagery'],['streets','Street names'],['hrb','Higher-risk highlight'],['travel','Travel distances'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>id==='aerial'?!!(anchor&&mapboxToken):id!=='context'&&id!=='streets'||!!anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
+            {([['context','Existing buildings'],['aerial','Aerial imagery'],['streets','Street names'],['travel','Travel distances'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>id==='aerial'?!!(anchor&&mapboxToken):id!=='context'&&id!=='streets'||!!anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
               if(id==='aerial'&&!e.target.checked)setImagery(undefined)
               setLayers({...layers,[id]:e.target.checked})
               if(id==='context'&&!e.target.checked&&(tool==='ghost'||tool==='show'))choose('select')
