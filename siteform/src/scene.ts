@@ -161,8 +161,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const labels:{p:Point;name:string;selected:boolean}[]=[]
   let heightHandle:Point|undefined
   project.blocks.forEach(b=>{
-    if(plan && floor>=levels(b).length)return
-    const polys=footprints(b,project.targets),z=plan?0:height(b)+b.level
+    if(plan && floor>=floors(b))return
+    const polys=footprints(b,project.targets),z=plan?0:height(b,project.houseHeights)+b.level
     const roof=project.colours[b.houseType]
     const layout=scene.drafting?undefined:apartmentLayout(b,project)
     const validLayout=layout?.ok?layout:undefined
@@ -193,7 +193,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
         })
       }
     }else{
-      polys.forEach(poly=>face(poly,z,material,levels(b),b.id,plan?0:b.level))
+      polys.forEach(poly=>face(poly,z,material,levels(b,project.houseHeights),b.id,plan?0:b.level))
     }
     if(group.length&&(b.id===selected||(plan&&layers.labels))){
       let center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)

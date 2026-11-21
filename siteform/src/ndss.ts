@@ -13,3 +13,5 @@ export const ndss={
 } as const
 export const defaultMix:Record<DwellingType,number>={'1B1P':5,'1B2P':35,'2B3P':20,'2B4P':25,'3B5P':10,'3B6P':5}
 export const defaultTargets:Record<DwellingType,number>={'1B1P':39,'1B2P':55,'2B3P':65,'2B4P':75,'3B5P':99,'3B6P':108}
+
+export const ndssCeiling={clearHeight:2.3,areaFraction:.75}

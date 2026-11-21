@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { adjustSetback, endInset, floorOutline, resizeStoreys, area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, length, newBlock, validPolygon } from '../src/model.ts'
+import { adjustSetback, endInset, floorOutline, resizeStoreys, area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, levels, meetsDwellingCeiling, length, newBlock, validPolygon } from '../src/model.ts'
 import { legacySample as sample, blankProject, restoreProject } from '../src/project.ts'
 import { geographicPoint, mapFrame } from '../src/geography.ts'
 const near=(a:number,b:number)=>assert.ok(Math.abs(a-b)<1e-7,`${a} ≠ ${b}`)
@@ -158,4 +158,27 @@ test('homes include an editable estimate from apartment GIA only',()=>{
   assert.equal(totals.density,34)
   assert.ok(totals.giaByUse.office!>0&&totals.giaByUse.pbsa!>0&&totals.giaByUse.house!>0)
   assert.equal(development({...project,apartmentAreaPerHome:100}).homes,28)
+})
+
+test('two-storey terraces fit 5.5 m houses and use the two-storey NDSS areas',()=>{
+  const terrace={...newBlock(sample,'house',[[0,0],[45,0]]),floors:2}
+  for(const [houseType,target] of [['3B5P',93],['3B6P',102]] as const){
+    const block={...terrace,houseType}
+    const outlines=footprints(block,sample.targets)
+    assert.equal(outlines.length,8)
+    assert.ok(outlines.every(poly=>Math.abs(length(poly[0],poly[1])-5.5)<1e-7))
+    near((length(outlines[0][1],outlines[0][2])-1.2)*5.2*2,target)
+    assert.equal(blockStats(block,sample).houses,8)
+  }
+  assert.equal(footprintSatisfies({...terrace,line:[[0,0],[5.49,0]]},sample.targets),false)
+})
+
+test('shared house storey heights drive massing and CSV and distinguish clear ceiling height',()=>{
+  const house={...newBlock(sample,'house',[[0,0],[11,0]]),floors:2}
+  const project={...sample,blocks:[house],houseHeights:{ground:3.2,upper:2.7}}
+  assert.deepEqual(levels(house,project.houseHeights),[3.2,5.9])
+  near(height(house,project.houseHeights),5.9)
+  assert.match(csv(project),/"house","2","5\.90"/)
+  assert.equal(meetsDwellingCeiling(2.6),true)
+  assert.equal(meetsDwellingCeiling(2.5),false)
 })

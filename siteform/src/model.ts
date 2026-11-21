@@ -1,11 +1,13 @@
 import {apartmentLayout,type ApartmentOptions,type ApartmentSettings} from './apartment.ts'
-import {dwellingTypes,type DwellingType} from './ndss.ts'
+import {dwellingTypes,ndss,ndssCeiling,type DwellingType} from './ndss.ts'
 export type Point = [number, number]
 export type HouseType = '3B5P' | '3B6P'
+export type HouseStoreys = 2 | 3
+export type StoreyHeights = {ground:number;upper:number}
 export type BlockType = 'house' | 'apartment' | 'office' | 'pbsa'
 export type Block = {id:string; name:string; type:BlockType; line:Point[]; depth:number; floors:number; ground:number; upper:number; level:number; houseType:HouseType; setbacks?:Point[]; apartmentLayout?:ApartmentOptions}
 export const defaultApartmentAreaPerHome=80
-export type Project = {apartmentAreaPerHome?:number; apartmentSettings?:ApartmentSettings; anchor?:{lat:number;lon:number}; boundary:Point[]; blocks:Block[]; targets:Record<HouseType,number>; colours:Record<HouseType,string>}
+export type Project = {houseHeights?:StoreyHeights;apartmentAreaPerHome?:number; apartmentSettings?:ApartmentSettings; anchor?:{lat:number;lon:number}; boundary:Point[]; blocks:Block[]; targets:Record<HouseType,number>; colours:Record<HouseType,string>}
 export const defaults = { frontage:4.5, external:0.6, party:0.3, houseFloors:3, houseHeight:3 }
 export const blockTypes:Record<BlockType,{label:string;legend:string;depth:number;ground:number;upper:number;floors:number}>={
   house:{label:'House terrace',legend:'Houses',depth:0,ground:defaults.houseHeight,upper:defaults.houseHeight,floors:defaults.houseFloors},
@@ -17,12 +19,23 @@ export const length = (a:Point,b:Point) => Math.hypot(b[0]-a[0],b[1]-a[1])
 const signedArea = (p:Point[]) => p.reduce((sum,a,i)=>{const b=p[(i+1)%p.length];return sum+a[0]*b[1]-a[1]*b[0]},0)/2
 export const area = (p:Point[]) => Math.abs(signedArea(p))
 export const frontage = (p:Point[]) => p.slice(1).reduce((sum,b,i)=>sum+length(p[i],b),0)
-export const depthFor = (target:number) =>
-  target / defaults.houseFloors / (defaults.frontage-defaults.party) + 2*defaults.external
-export const height = (b:Block) => b.type==='house' ? defaults.houseHeight*defaults.houseFloors : b.ground+(b.floors-1)*b.upper
+export const houseFrontage = (storeys:HouseStoreys) => storeys===2?5.5:defaults.frontage
+export const depthFor = (target:number,storeys:HouseStoreys=3) =>
+  target / storeys / (houseFrontage(storeys)-defaults.party) + 2*defaults.external
 export const blockStoreys={min:1,max:30}
-export const floors = (b:Block) => b.type==='house' ? defaults.houseFloors : b.floors
-export const levels = (b:Block) => Array.from({length:floors(b)},(_,i)=>b.type==='house'?(i+1)*defaults.houseHeight:b.ground+i*b.upper)
+export const houseStoreys=(b:Block):HouseStoreys=>b.floors===2?2:3
+export const floors = (b:Block) => b.type==='house' ? houseStoreys(b) : b.floors
+export const defaultHouseHeights:StoreyHeights={ground:defaults.houseHeight,upper:defaults.houseHeight}
+export const ceilingAllowance=.3
+export const minimumDwellingStoreyHeight=2.6
+export const meetsDwellingCeiling=(height:number)=>height-ceilingAllowance>=ndssCeiling.clearHeight-1e-7
+export const levels = (b:Block,houseHeights=defaultHouseHeights) => {
+  const {ground,upper}=b.type==='house'?houseHeights:b
+  return Array.from({length:floors(b)},(_,i)=>ground+i*upper)
+}
+export const height = (b:Block,houseHeights=defaultHouseHeights) => levels(b,houseHeights).at(-1)??0
+export const houseAreaTarget=(type:HouseType,storeys:HouseStoreys,targets:Project['targets'])=>
+  storeys===2?ndss[type].areas[1]:targets[type]
 const minus = (a:Point,b:Point):Point => [a[0]-b[0],a[1]-b[1]]
 const cross = (a:Point,b:Point) => a[0]*b[1]-a[1]*b[0]
 const orientation = (a:Point,b:Point,c:Point) => cross(minus(b,a),minus(c,a))
@@ -55,19 +68,20 @@ function rectangle(a:Point,b:Point,depth:number):Point[] {
   const p=offset(a,b,depth)
   return [a,b,[b[0]+p[0]-a[0],b[1]+p[1]-a[1]],p]
 }
-function houseUnits(line:Point[],target:number) {
-  const depth=depthFor(target)
+function houseUnits(line:Point[],target:number,storeys:HouseStoreys) {
+  const width=houseFrontage(storeys)
+  const depth=depthFor(target,storeys)
   const clearDepth=depth-2*defaults.external
   return line.slice(1).flatMap((end,i)=>{
-    const start=line[i],count=Math.floor((length(start,end)+1e-7)/defaults.frontage)
+    const start=line[i],count=Math.floor((length(start,end)+1e-7)/width)
     return Array.from({length:count},(_,j)=>{
       const left=j===0?defaults.external:defaults.party/2
       const right=j===count-1?defaults.external:defaults.party/2
-      const internalWidth=defaults.frontage-(j===0?left:0)-(j===count-1?right:0)
+      const internalWidth=width-(j===0?left:0)-(j===count-1?right:0)
       return {
-        outline:rectangle(pointAlong(start,end,j*defaults.frontage),pointAlong(start,end,(j+1)*defaults.frontage),depth),
+        outline:rectangle(pointAlong(start,end,j*width),pointAlong(start,end,(j+1)*width),depth),
         internalArea:internalWidth*clearDepth,
-        usableArea:(defaults.frontage-left-right)*clearDepth
+        usableArea:(width-left-right)*clearDepth
       }
     })
   })
@@ -75,7 +89,7 @@ function houseUnits(line:Point[],target:number) {
 export function footprints(b:Block,targets:Project['targets']):Point[][] {
   const line=b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01)
   if(line.length<2) return []
-  if(b.type==='house') return houseUnits(line,targets[b.houseType]).map(unit=>unit.outline)
+  if(b.type==='house') return houseUnits(line,houseAreaTarget(b.houseType,houseStoreys(b),targets),houseStoreys(b)).map(unit=>unit.outline)
   const back=line.map((p,i):Point=>{
     if(i===0) return offset(p,line[1],b.depth)
     if(i===line.length-1) return offset(p,line[i-1],-b.depth)
@@ -174,7 +188,7 @@ function internalFloorArea(poly:Point[]) {
   )?area(inner):null
 }
 export function blockStats(b:Block,p:Project) {
-  const units=b.type==='house'?houseUnits(b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01),p.targets[b.houseType]):null
+  const units=b.type==='house'?houseUnits(b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01),houseAreaTarget(b.houseType,houseStoreys(b),p.targets),houseStoreys(b)):null
   const outlines=units?units.map(unit=>unit.outline):footprints(b,p.targets)
   const footprint=outlines.reduce((sum,poly)=>sum+area(poly),0)
   const floorPolys=b.type!=='house'&&outlines[0]?levels(b).map((_,i)=>floorOutline(b,outlines[0],i)):[]
@@ -243,7 +257,7 @@ export function newBlock(project:Project,type:Block['type'],line:Point[]):Block 
 export function csv(p:Project) {
   const headings=['Block','Type','Storeys','Height (m)','Footprint (m²)','External floor area (m²)','Houses','House type','Modelled usable house area (m²)','Site area (m²)']
   const fixed=(n:number)=>n.toFixed(2)
-  const rows=p.blocks.map(b=>{const s=blockStats(b,p);return [b.name,b.type,floors(b),fixed(height(b)),fixed(s.footprint),fixed(s.gross),s.houses,b.type==='house'?b.houseType:'',fixed(s.usable),'']})
+  const rows=p.blocks.map(b=>{const s=blockStats(b,p);return [b.name,b.type,floors(b),fixed(height(b,p.houseHeights)),fixed(s.footprint),fixed(s.gross),s.houses,b.type==='house'?b.houseType:'',fixed(s.usable),'']})
   const t=development(p)
   return [headings,...rows,['Site total','','','',fixed(t.footprint),fixed(t.gross),t.houses,'',fixed(t.usable),fixed(t.site)]].map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n')
 }

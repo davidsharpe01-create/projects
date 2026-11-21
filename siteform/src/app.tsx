@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
-import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, type Block, type BlockType, type Point, type Project } from './model'
+import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
 import { draw, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadContext,emptyContext,type ContextData} from './context'
 import {blankProject,defaultAddress,isDefaultAddress,restoreProject} from './project'
 import {apartmentLayout,apartmentSettings,areaTarget,defaultApartmentOptions,type ApartmentOptions} from './apartment'
-import {dwellingTypes,ndss,ndssVersion} from './ndss'
+import {dwellingTypes,ndss,ndssVersion,ndssCeiling} from './ndss'
 import './style.css'
 
 type Tool=BlockType|'select'|'boundary'|'move'|'rotate'|'measure'|'vertices'|'ghost'|'show'
@@ -53,6 +53,8 @@ function App(){
   const locationTitle=atDefault?defaultAddress.street:project.anchor?'Site location':'Unplaced project'
   const [selection,setSelection]=useState<string|null>(()=>project.blocks[0]?.id??null)
   const selected=project.blocks.find(b=>b.id===selection)
+  const [drawHouseStoreys,setDrawHouseStoreys]=useState<HouseStoreys>(3)
+  const houseHeights=project.houseHeights??defaultHouseHeights
   const [tool,setTool]=useState<Tool>('select')
   const [plan,setPlan]=useState(false)
   const [floor,setFloor]=useState(0)
@@ -102,6 +104,16 @@ function App(){
   const selectedUnits=selectedLayout?.ok?selectedLayout.floors.flatMap(f=>f.units):[]
   const warnings=project.blocks.flatMap(b=>blockStats(b,project).outside?[b.name+' extends beyond the site boundary.']:[])
   const higherRiskBlocks=new Set<string>()
+  for(const block of project.blocks){
+    if(block.type==='house'){
+      const storeys=houseStoreys(block)
+      const fraction=(Number(meetsDwellingCeiling(houseHeights.ground))+(storeys-1)*Number(meetsDwellingCeiling(houseHeights.upper)))/storeys
+      if(fraction<ndssCeiling.areaFraction)warnings.push(block.name+' · Estimated 2.3 m clear ceiling height covers '+format(fraction*100)+'% of house GIA. NDSS requires at least 75%.')
+    }else if(block.type==='apartment'){
+      const shortFloors=levels(block).map((level,i,all)=>meetsDwellingCeiling(level-(all[i-1]??0))?null:i===0?'ground':String(i)).filter(f=>f!==null)
+      if(shortFloors.length)warnings.push(block.name+' · Apartment ceiling height is estimated below 2.3 m on floor(s) '+shortFloors.join(', ')+'. NDSS requires 2.3 m across at least 75% of each dwelling’s GIA.')
+    }
+  }
   for(const block of project.blocks){
     const layout=apartmentLayout(block,project)
     if(!layout)continue
@@ -176,7 +188,8 @@ function App(){
     }else if(isBuildingTool(tool)){
       if(draft.length<2){setNotice('Add at least two frontage points.');return}
       const block=newBlock(project,tool,draft)
-      if(!footprintSatisfies(block,project.targets)){setNotice(tool==='house'?'Use a frontage of at least 4.5 m and avoid overlapping house segments.':'The frontage creates an invalid footprint. Try a wider turn.');return}
+      if(tool==='house')block.floors=drawHouseStoreys
+      if(!footprintSatisfies(block,project.targets)){setNotice(tool==='house'?'Use a frontage of at least '+houseFrontage(drawHouseStoreys)+' m and avoid overlapping house segments.':'The frontage creates an invalid footprint. Try a wider turn.');return}
       commit({...project,blocks:[...project.blocks,block]});setSelection(block.id)
     }else return
     choose('select')
@@ -433,7 +446,7 @@ function App(){
     const model=projection(w,h,base,plan)
     const points=project.boundary.map(p=>model.project(p))
     project.blocks.forEach(b=>footprints(b,project.targets).forEach(poly=>poly.forEach(p=>{
-      points.push(model.project(p,plan?0:b.level),model.project(p,plan?0:b.level+height(b)))
+      points.push(model.project(p,plan?0:b.level),model.project(p,plan?0:b.level+height(b,project.houseHeights)))
     })))
     if(!points.length){setCamera(home);return}
     const xs=points.map(p=>p[0]),ys=points.map(p=>p[1])
@@ -565,6 +578,7 @@ function App(){
           {Array.from({length:storyCount},(_,i)=><option value={i} key={i}>{i===0?'Ground':i}</option>)}</select></label>}
         {actions[tool]&&<div className="draw-message">
           <span>{tool==='measure'&&draft.length===2?format(length(...draft as [Point,Point]),2)+' m':actions[tool]}</span>
+          {tool==='house'&&<label className="house-storeys">Storeys <select value={drawHouseStoreys} onChange={e=>setDrawHouseStoreys(Number(e.target.value) as HouseStoreys)}><option value={2}>2 · 5.5 m</option><option value={3}>3 · 4.5 m</option></select></label>}
           {drawTool&&<button className="primary" onClick={finish}>Finish</button>}
           {tool==='ghost'&&ghosted.size>0&&<button className="primary" onClick={()=>choose('show')}>Show</button>}
           {tool==='show'&&<button className="primary" onClick={()=>choose('ghost')}>Ghost</button>}
@@ -632,9 +646,18 @@ function App(){
               {selected.type!=='house'?<>
                 <NumberField label="Building depth" value={selected.depth} min={3} max={80} step={.1} update={depth=>updateBlock({...selected,depth})}/>
                 <NumberField label="Storeys" value={selected.floors} min={blockStoreys.min} max={blockStoreys.max} unit="" update={floors=>{if(!updateBlock(resizeStoreys(selected,floors)))return false;setFloor(f=>Math.min(f,floors-1));setEditFloor(f=>Math.min(f,floors-1))}}/>
-                <NumberField label="Ground floor" value={selected.ground} min={2.5} max={12} step={.1} update={ground=>updateBlock({...selected,ground})}/>
-                <NumberField label="Upper floors" value={selected.upper} min={2.5} max={12} step={.1} update={upper=>updateBlock({...selected,upper})}/>
+                <NumberField label="Ground floor height" value={selected.ground} min={selected.type==='apartment'?minimumDwellingStoreyHeight:2.5} max={12} step={.1} update={ground=>updateBlock({...selected,ground})}/>
+                <NumberField label="Upper floor height" value={selected.upper} min={selected.type==='apartment'?minimumDwellingStoreyHeight:2.5} max={12} step={.1} update={upper=>updateBlock({...selected,upper})}/>
               </>:<>
+                <label className="field"><span>House storeys</span><select value={houseStoreys(selected)} onChange={e=>{
+                  const storeys=Number(e.target.value) as HouseStoreys
+                  const block={...selected,floors:storeys}
+                  if(!footprintSatisfies(block,project.targets)){
+                    setNotice('A '+storeys+'-storey house needs at least '+houseFrontage(storeys)+' m frontage and a footprint without overlaps.')
+                    return
+                  }
+                  updateBlock(block)
+                }}><option value={2}>2 · 5.5 m frontage</option><option value={3}>3 · 4.5 m frontage</option></select></label>
                 <label className="field"><span>House type</span><select value={selected.houseType} onChange={e=>updateBlock({...selected,houseType:e.target.value as Block['houseType']})}><option>3B5P</option><option>3B6P</option></select></label>
                 <div className="readout"><span>Complete houses</span><strong>{s.houses}</strong></div>
               </>}
@@ -704,19 +727,24 @@ function App(){
           </section>
           <section className="properties dwelling-settings" aria-labelledby="house-types">
             <h3 id="house-types">House types</h3>
-            <table className="mix-table"><thead><tr><th>Type</th><th>Target area</th><th>Actual</th></tr></thead>
+            <div className="property-grid">
+              <NumberField label="Ground floor height" value={houseHeights.ground} min={minimumDwellingStoreyHeight} max={12} step={.1} update={ground=>commit({...project,houseHeights:{...houseHeights,ground}})}/>
+              <NumberField label="Upper floor height" value={houseHeights.upper} min={minimumDwellingStoreyHeight} max={12} step={.1} update={upper=>commit({...project,houseHeights:{...houseHeights,upper}})}/>
+            </div>
+            <p className="summary-note">Heights apply to all houses. Houses and apartments allow 0.3 m for floor and ceiling construction, giving 2.3 m estimated clear height at a 2.6 m storey height.</p>
+            <table className="mix-table"><thead><tr><th>Type</th><th>2-storey area</th><th>3-storey target</th><th>Actual</th></tr></thead>
               <tbody>{(['3B5P','3B6P'] as const).map(type=><tr key={type}><th scope="row"><label className="dwelling-colour">
                 <input type="color" aria-label={type+' house colour'} value={project.colours[type]}
                   onChange={e=>commit({...project,colours:{...project.colours,[type]:e.target.value}})}/>{type}
               </label></th>
-                <td><NumberField label={type+' house target area'} value={project.targets[type]} min={60} max={220} step={.1} unit="m²" update={value=>{
+                <td>{ndss[type].areas[1]} m²</td><td><NumberField label={type+' three-storey house target area'} value={project.targets[type]} min={ndss[type].areas[2]} max={220} step={.1} unit="m²" update={value=>{
                   const targets={...project.targets,[type]:value}
                   if(project.blocks.every(b=>footprintSatisfies(b,targets)))return commit({...project,targets})
                   setNotice('That target creates overlapping house footprints.')
                   return false
                 }}/></td><td>{totals.houseMix[type]}</td></tr>)}</tbody>
             </table>
-            <p className="summary-note">3B5P and 3B6P area targets are shared with apartments. The apartment targets also respect their space-standard minimums.</p>
+            <p className="summary-note">Three-storey area targets are shared with apartments. Two-storey terraces use their own NDSS area minimums.</p>
           </section>
         </Panel>
         <Panel title="Site statistics" icon="chart" initial={false}>
