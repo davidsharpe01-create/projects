@@ -730,8 +730,10 @@ function App(){
                 <p className="summary-note">{selectedUnits.length} apartments · {selectedUnits.filter(u=>u.area+1e-7>=u.target).length} meet target area</p>
                 <div className="property-grid">
                   <label className="field"><span>Corridor layout</span><select value={selected.apartmentLayout.mode} onChange={e=>updateLayout(selected,{mode:e.target.value as ApartmentOptions['mode']})}><option value="single">Single-loaded</option><option value="double">Double-loaded</option></select></label>
+                  {selectedLayout?.ok&&selectedLayout.cornerCores?<p className="summary-note">Cores are placed automatically at inside corners.</p>:<>
                   <label className="field"><span>Core side</span><select value={selected.apartmentLayout.coreSide} onChange={e=>updateLayout(selected,{coreSide:e.target.value as ApartmentOptions['coreSide']})}><option value="front">Front</option><option value="rear">Rear</option></select></label>
                   <NumberField label="Core position" value={selected.apartmentLayout.corePosition??50} min={0} max={100} unit="%" update={corePosition=>updateLayout(selected,{corePosition})}/>
+                  </>}
                   {selectedLayout?.ok&&selectedLayout.hrb&&<label className="field"><span>Higher-risk core</span><select value={selected.apartmentLayout.hrbCores} onChange={e=>updateLayout(selected,{hrbCores:Number(e.target.value) as 1|2})}><option value={1}>1 × 70 m²</option><option value={2}>2 × 50 m²</option></select></label>}
                   <NumberField label="Ground floor commercial" value={selected.apartmentLayout.commercial??0} min={0} max={100-(selected.apartmentLayout.communal??0)} unit="%" update={commercial=>updateLayout(selected,{commercial})}/>
                   <NumberField label="Ground floor communal" value={selected.apartmentLayout.communal??0} min={0} max={100-(selected.apartmentLayout.commercial??0)} unit="%" update={communal=>updateLayout(selected,{communal})}/>

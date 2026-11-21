@@ -84,10 +84,27 @@ test('mixed ground floor retains upper apartments and reports actual and estimat
   assert.equal(totals.homes,totals.generatedApartments+totals.estimatedApartments!)
 })
 
-test('unsupported frontage returns a specific reason',()=>{
-  const answer=solveApartments({...rectangle(),line:[[0,0],[20,0],[25,20]]},project)
+test('bent frontages have continuous corridors and cores on the inside of each turn',()=>{
+  for(const turn of [1,-1]){
+    const block={...rectangle(),line:[[0,0],[42,0],[42,turn*42]] as Block['line']}
+    const answer=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,nonHrbTravel:100,betweenCoreTravel:100}})
+    assert.ok(answer.ok)
+    const [ground,upper]=answer.floors
+    assert.equal(ground.cores.length,1)
+    assert.ok(ground.corridor.length>4)
+    assert.ok(ground.cores[0].length>4)
+    assert.ok(Math.abs(area(ground.cores[0])-50)<1e-5)
+    assert.ok(ground.cores[0].every(([,y])=>turn>0?y>=9.75-1e-7:y<=8.25+1e-7))
+    assert.deepEqual(upper.cores,ground.cores)
+    assert.ok(ground.units.length>=4)
+    assert.ok(ground.units.every(unit=>unit.area>=unit.minimum-1e-7))
+  }
+})
+
+test('rejects a bend where the inside edge folds back',()=>{
+  const answer=solveApartments({...rectangle(),line:[[0,0],[12,0],[12,22]]},project)
   assert.ok(!answer.ok)
-  assert.match(answer.reason,/straight frontage/)
+  assert.match(answer.reason,/bend is too tight/)
 })
 
 test('adds aligned cores when apartment centres are over the single-direction limit',()=>{
@@ -139,4 +156,15 @@ test('applies the 15 m HRB limit and the 30 m edge-to-edge spacing limit',()=>{
   assert.ok(loose.betweenCores>30&&loose.travel<=30)
   assert.ok(tight.cores.length>loose.cores.length)
   assert.ok(tight.betweenCores<=30&&tight.travel<=30)
+})
+
+test('multiple bends retain both corner cores and the corridor through upper setbacks',()=>{
+  const block={...rectangle(),line:[[0,0],[45,0],[45,50],[90,50]] as Block['line'],setbacks:[[0,0],[5,4]] as Block['setbacks']}
+  const answer=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,nonHrbTravel:100,betweenCoreTravel:100}})
+  assert.ok(answer.ok)
+  assert.equal(answer.floors[0].cores.length,2)
+  assert.deepEqual(answer.floors[1].cores,answer.floors[0].cores)
+  assert.ok(answer.floors[1].corridorArea<answer.floors[0].corridorArea)
+  assert.ok(answer.floors[0].travelRoutes.some(route=>route.betweenCores))
+  assert.ok(answer.floors[1].units.every(unit=>answer.floors[0].units.some(ground=>JSON.stringify(ground.outline)===JSON.stringify(unit.outline))))
 })
