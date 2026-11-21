@@ -12,6 +12,7 @@ type Span=[number,number]
 type Bay={y:Span;side:'front'|'rear'}
 type Unit={id:string;type:DwellingType;outline:Point[];area:number;minimum:number;target:number}
 type LocalUnit={x:Span;bay:Bay;type:DwellingType;area:number;minimum:number;target:number}
+type ApartmentBayUnit=LocalUnit & {outline?:Point[];corridorStation?:number;centre?:Point}
 type TravelRoute={points:Point[];distance:number;betweenCores:boolean}
 export type ApartmentFloor={units:Unit[];cores:Point[][];corridor:Point[];uses:{kind:'commercial'|'communal';outline:Point[]}[];coreArea:number;corridorArea:number;travel:number;betweenCores:number;travelRoutes:TravelRoute[]}
 type Layout={ok:true;floors:ApartmentFloor[];hrb:boolean;topStoreyHeight:number;cornerCores:boolean}
@@ -190,17 +191,31 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       const cuts=[zone.x[0],...bends.map(bend=>bend.x).filter(x=>x>zone.x[0]+eps&&x<zone.x[1]-eps),zone.x[1]]
       return cuts.slice(1).map((end,i)=>({zone:[cuts[i],end] as Span,eligible:bays.filter(bay=>bay.side!==zone.reserved)}))
     }).filter(({zone})=>zone[1]-zone[0]>eps)
-    const typical=ranges.flatMap(({zone,eligible})=>{
+    const typical=ranges.flatMap(({zone,eligible}):ApartmentBayUnit[]=>{
       if(!bends.length)return eligible.length?allocate(zone,eligible[0],project,settings).flatMap(unit=>eligible.map(bay=>({...unit,bay}))):[]
+      const i=segment((zone[0]+zone[1])/2)
+      const [dx,dy]=directions[i]
+      const [ox,oy]=line[i]
+      const projectAlong=([x,y]:Point)=>(x-ox)*dx+(y-oy)*dy
+      const offsetAt=(x:number,y:number)=>projectAlong(point(x,y))
+      const worldPoint=(x:number,y:number):Point=>[ox+x*dx-y*dy,oy+x*dy+y*dx]
+      const stationAt=(x:number,y:number)=>{
+        const start=projectAlong(atVertex(i,y)),end=projectAlong(atVertex(i+1,y))
+        return stations[i]+(x-start)*(stations[i+1]-stations[i])/(end-start)
+      }
       return eligible.flatMap(bay=>{
-        const [a,b]=zone
-        const outer=bay.side==='front'?bay.y[0]:bay.y[1]
-        const width=length(point(a,outer),point(b,outer))
-        const ratio=width/(b-a)
-        const depth=area(polygon(zone,bay.y))/width
-        return allocate([0,width],{...bay,y:[0,depth]},project,settings).map(unit=>{
-          const x:Span=[a+unit.x[0]/ratio,a+unit.x[1]/ratio]
-          return {...unit,x,bay,area:area(polygon(x,bay.y))}
+        const [a,b]=zone,[near,far]=bay.y
+        // Fit rectangles into the common run at both bay edges. The miters
+        // shape the corridor and core, while party walls follow the façade normal.
+        const run:Span=[Math.max(offsetAt(a,near),offsetAt(a,far)),Math.min(offsetAt(b,near),offsetAt(b,far))]
+        return allocate(run,bay,project,settings).map(unit=>{
+          const [left,right]=unit.x
+          const centreX=(left+right)/2,centreY=(near+far)/2
+          const stationBounds:Span=[Math.min(stationAt(left,near),stationAt(left,far)),
+            Math.max(stationAt(right,near),stationAt(right,far))]
+          return {...unit,x:stationBounds,
+            outline:[worldPoint(left,near),worldPoint(right,near),worldPoint(right,far),worldPoint(left,far)],
+            corridorStation:stationAt(centreX,corridorCentre),centre:worldPoint(centreX,centreY)}
         })
       })
     })
@@ -225,10 +240,10 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         unit.x[0]-(bends.length?0:defaults.party/2)>=limits[0]-eps&&unit.x[1]+(bends.length?0:defaults.party/2)<=limits[1]+eps&&
         (floor>0||!uses.some(use=>use.bay===unit.bay&&use.x[1]>unit.x[0]-defaults.party/2+eps&&use.x[0]<unit.x[1]+defaults.party/2-eps)))
       const units=fitting.map(({unit,index})=>({id:`${block.id}:${floor}:${index}`,type:unit.type,
-        outline:polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))
+        outline:unit.outline??polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))
       const endRoutes:(TravelRoute|undefined)[]=[]
       for(const {unit} of fitting){
-        const x=(unit.x[0]+unit.x[1])/2
+        const x=unit.corridorStation??(unit.x[0]+unit.x[1])/2
         const left=cores[0].x[0],right=cores.at(-1)!.x[1]
         if(x>=left&&x<=right&&cores.length>1)continue
         const coreX=Math.min(right,Math.max(left,x))
@@ -238,7 +253,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         const edge=coreSide==='front'?corridorY[0]:corridorY[1]
         const corridorPoints=along([Math.min(x,coreX),Math.max(x,coreX)],corridorCentre)
         if(x>coreX)corridorPoints.reverse()
-        const points=[point(x,centre),...corridorPoints,point(coreX,edge)]
+        const points=[unit.centre??point(x,centre),...corridorPoints,point(coreX,edge)]
         const distance=routeLength(points)
         if(distance<=(endRoutes[side]?.distance??0))continue
         endRoutes[side]={points,distance,betweenCores:false}

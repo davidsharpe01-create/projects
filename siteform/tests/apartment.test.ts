@@ -168,3 +168,21 @@ test('multiple bends retain both corner cores and the corridor through upper set
   assert.ok(answer.floors[0].travelRoutes.some(route=>route.betweenCores))
   assert.ok(answer.floors[1].units.every(unit=>answer.floors[0].units.some(ground=>JSON.stringify(ground.outline)===JSON.stringify(unit.outline))))
 })
+
+test('party walls are perpendicular to the local façade on both sides of an oblique bend',()=>{
+  const block={...rectangle(),line:[[0,0],[48,16],[30,60]] as Block['line']}
+  const answer=solveApartments(block,project)
+  assert.ok(answer.ok)
+  const directions=[[48,16],[-18,44]]
+  const counts=[0,0]
+  for(const {outline:[a,b,c,d]} of answer.floors[0].units){
+    const wing=directions.findIndex(([x,y])=>Math.abs((b[0]-a[0])*y-(b[1]-a[1])*x)<1e-7)
+    assert.ok(wing>=0)
+    const [x,y]=directions[wing]
+    for(const [start,end] of [[a,d],[b,c]]){
+      assert.ok(Math.abs((end[0]-start[0])*x+(end[1]-start[1])*y)<1e-7)
+    }
+    counts[wing]++
+  }
+  assert.ok(counts.every(count=>count>0))
+})

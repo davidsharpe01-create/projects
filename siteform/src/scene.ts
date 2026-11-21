@@ -6,6 +6,7 @@ import type {AerialTile} from './aerial'
 import {roadWidths,type ContextData} from './context'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
 import { footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
+export const coreFill='#b8babc'
 const editingBlue='#235b88'
 export type BuildingView = 'massing'|'floorplates'|'apartments'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
@@ -113,7 +114,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
             return
           }
           world(layout.corridor,'#e7e4dd','#a9a298',.7,true,z)
-          layout.cores.forEach(core=>world(core,'#b5a797','#716357',.8,true,z))
+          layout.cores.forEach(core=>world(core,coreFill,'#727678',.8,true,z))
           layout.uses.forEach(use=>world(use.outline,use.kind==='commercial'?'#dec4a2':'#c8c5ad','#8c8173',.7,true,z))
           layout.units.forEach(unit=>world(unit.outline,project.apartmentSettings?.colours?.[unit.type]??ndss[unit.type].colour,'#66615b',.65,true,z))
           if(layers.travel&&showTravel&&id===selected){

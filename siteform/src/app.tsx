@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, 
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
-import { draw, home, initialLayers, projection, type BuildingView, type Camera } from './scene'
+import { coreFill, draw, home, initialLayers, projection, type BuildingView, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadAerial,mapboxToken,type AerialTile} from './aerial'
 import {loadContext,emptyContext,type ContextData} from './context'
@@ -651,7 +651,7 @@ function App(){
         {(plan||stackView&&activeBuildingView==='apartments')&&selectedLayout?.ok&&(stackView||selectedLayout.floors[shownFloor])&&<div className={'apartment-key'+(stackView?' stack-key':'')} aria-label="Apartment colour legend">
           {dwellingTypes.filter(type=>(stackView?selectedUnits:selectedLayout.floors[shownFloor].units).some(unit=>unit.type===type)).map(type=>
             <span key={type}><i style={{background:settings.colours?.[type]??ndss[type].colour}}/>{type}</span>)}
-          <span><i style={{background:'#b5a797'}}/>Core</span><span><i style={{background:'#e7e4dd'}}/>Corridor</span>
+          <span><i style={{background:coreFill}}/>Core</span><span><i style={{background:'#e7e4dd'}}/>Corridor</span>
           {(stackView?selectedLayout.floors:[selectedLayout.floors[shownFloor]]).some(f=>f.uses.some(use=>use.kind==='commercial'))&&<span><i style={{background:'#dec4a2'}}/>Commercial</span>}
           {(stackView?selectedLayout.floors:[selectedLayout.floors[shownFloor]]).some(f=>f.uses.some(use=>use.kind==='communal'))&&<span><i style={{background:'#c8c5ad'}}/>Communal</span>}
         </div>}
