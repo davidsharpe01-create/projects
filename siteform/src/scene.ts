@@ -360,6 +360,9 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     pickContext:(point:Point)=>visibleSurface(solidSurfaces,point)?.contextIndex,
     pickGhost:(point:Point)=>visibleSurface(surfaces.filter(surface=>
       surface.contextIndex!==undefined&&scene.ghosted.has(surface.contextIndex)),point)?.contextIndex,
-    setbackHandles,pickFloor:(point:Point)=>visibleSurface(solidSurfaces,point)?.floor??0,
+    setbackHandles,pickFloor:(point:Point)=>{
+      const surface=visibleSurface(solidSurfaces,point)
+      return surface?.roof?0:surface?.floor??0
+    },
     heightAt:(point:Point)=>!!heightHandle&&(length(point,heightHandle)<12||pickSurface(solidSurfaces,point,true)===selected)}
 }

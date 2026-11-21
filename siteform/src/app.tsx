@@ -119,7 +119,6 @@ function App(){
   const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,pickContext:()=>undefined,pickGhost:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
   const drawingClick=useRef<Point|null>(null)
-  const firstBlockClick=useRef<{id:string;floor:number}|null>(null)
   const totals=development(project)
   const settings=apartmentSettings(project)
   const selectedLayout=selected?apartmentLayout(selected,project):undefined
@@ -448,35 +447,19 @@ function App(){
     if(!plan)setRevealedBlock(id)
     else if(!id||id!==selection)setRevealedBlock(null)
   }
-  function enterBuilding(id:string|null,hitFloor:number){
-    const block=project.blocks.find(b=>b.id===id)
-    if(!block||block.type==='house'||block.floors<2)return
-    setSelection(block.id)
-    const upperFloor=Math.min(block.floors-1,Math.max(1,hitFloor))
-    if(plan)chooseFloor(upperFloor)
-    else setEditFloor(upperFloor)
-  }
   function clickCanvas(e:MouseEvent<HTMLCanvasElement>){
     const screen=drawingClick.current
     drawingClick.current=null
     if(!screen)return
     if(tool==='select'){
       const handle=scene.current.handles.some(p=>length(p,screen)<12)||scene.current.setbackHandles.some(p=>length(p,screen)<12)
-      const hit=handle?selection:scene.current.pick(screen)
-      const hitFloor=plan?shownFloor:scene.current.pickFloor(screen)
-      if(e.detail===2){
-        // A first click can open the floor stack and change what is under the pointer.
-        const first=firstBlockClick.current
-        enterBuilding(first?.id??hit,first?.floor??hitFloor)
-        firstBlockClick.current=null
-        return
-      }
-      firstBlockClick.current=hit?{id:hit,floor:hitFloor}:null
       if(handle)return
+      const hit=scene.current.pick(screen)
+      const block=project.blocks.find(b=>b.id===hit)
+      const hitFloor=block&&block.type!=='house'?(plan?shownFloor:scene.current.pickFloor(screen)):0
       revealBlock(hit)
+      setEditFloor(hitFloor)
       if(hit&&!plan)setFloor(hit===selection&&stackView?hitFloor:0)
-      if(!hit||hit!==selection)setEditFloor(0)
-      else if(selectedFloor&&!plan)setEditFloor(Math.max(1,hitFloor))
       return
     }
     if(!drawTool)return
@@ -686,7 +669,7 @@ function App(){
         </div>
         <div className="block-list">
           <h2 className="section-label">Buildings{project.blocks.length>0&&<span>{project.blocks.length}</span>}</h2>
-          {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');revealBlock(b.id);setFloor(0);setEditFloor(0)}} onDoubleClick={()=>enterBuilding(b.id,1)}>
+          {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');revealBlock(b.id);setFloor(0);setEditFloor(0)}}>
             <span className={'block-icon '+b.type}><Icon name={b.type==='apartment'?'building':b.type} size={16}/></span>
             <span className="block-name"><strong>{b.name}</strong><small>{blockTypes[b.type].label}{higherRiskBlocks.has(b.id)?' (HRB)':''}</small></span>
             <span className="storeys">{floors(b)}F</span><Icon name="right" size={13}/>
@@ -745,7 +728,7 @@ function App(){
               </>:<button type="button" className="primary" onClick={()=>subdivide(selected)}>Subdivide into apartments</button>}
             </div>}
             <div className="property-actions">
-              {tool==='select'&&<span className="vertex-hint">{selectedFloor?'Drag either end to adjust this floor':selected.type!=='house'&&selected.floors>1?'Drag ground handles or double-click the block to edit floors':'Drag frontage handles to edit'}</span>}
+              {tool==='select'&&<span className="vertex-hint">{selectedFloor?'Drag either end to adjust this floor':selected.type!=='house'&&selected.floors>1?'Drag ground handles or click an upper floor for setbacks':'Drag frontage handles to edit'}</span>}
               <Button icon="copy" kind="square" title="Duplicate block" onClick={()=>duplicate(selected)}/>
               <Button icon="trash" kind="square" title="Delete block" onClick={remove}/>
             </div>
@@ -829,7 +812,7 @@ function App(){
       <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Right-drag or middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold middle and left together to pan while editing. In Plan, middle-drag pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select its ground spline. Double-click to enter floor editing, then pick an upper floor and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Right-drag or middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold middle and left together to pan while editing. In Plan, middle-drag pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
