@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {solveApartments,defaultApartmentOptions,defaultApartmentSettings} from '../src/apartment.ts'
-import {area,development,newBlock,type Block} from '../src/model.ts'
+import {area,defaults,development,newBlock,type Block} from '../src/model.ts'
 import {blankProject} from '../src/project.ts'
 
 const project=blankProject()
@@ -18,6 +18,11 @@ test('double loaded subdivision reserves core and corridor and mirrors units',()
   assert.ok(Math.abs(ground.corridorArea-(54-1.2)*1.5)<1e-7)
   assert.deepEqual(ground.units.map(u=>u.outline),upper.units.map(u=>u.outline))
   const front=ground.units.filter(u=>u.outline[0][1]<9)
+  const [coreStart,coreEnd]=ground.cores[0].slice(0,2).map(([x])=>x)
+  const before=front.filter(unit=>unit.outline[1][0]<coreStart).at(-1)!
+  const after=front.find(unit=>unit.outline[0][0]>coreEnd)!
+  assert.ok(Math.abs(coreStart-before.outline[1][0]-defaults.party)<1e-7)
+  assert.ok(Math.abs(after.outline[0][0]-coreEnd-defaults.party)<1e-7)
   assert.ok(front.every(u=>ground.units.some(rear=>rear.type===u.type&&
     rear.outline[0][1]>9&&rear.outline[0][0]===u.outline[0][0]&&rear.outline[1][0]===u.outline[1][0])))
   for(const u of ground.units){
@@ -304,6 +309,12 @@ test('a bent double-loaded block mirrors qualifying bays and keeps the end front
   assert.ok(result.ok)
   const ground=result.floors[0]
   assert.equal(ground.cores.length,1)
+  const core=ground.cores[0]
+  const left=Math.min(...core.map(([x])=>x)), end=Math.max(...core.map(([,y])=>y))
+  const horizontal=ground.units.filter(unit=>unit.outline.every(([x,y])=>x<left&&y>9))
+  const vertical=ground.units.filter(unit=>unit.outline.every(([x,y])=>x<33&&y>end))
+  assert.ok(Math.abs(left-Math.max(...horizontal.flatMap(unit=>unit.outline.map(([x])=>x)))-defaults.party)<1e-7)
+  assert.ok(Math.abs(Math.min(...vertical.flatMap(unit=>unit.outline.map(([,y])=>y)))-end-defaults.party)<1e-7)
   const paired=ground.units.filter(unit=>unit.outline.length===4&&unit.outline.every(p=>p[1]<9)&&
     ground.units.some(other=>other.type===unit.type&&other.outline.length===4&&other.outline.every(p=>p[1]>9)&&
       Math.abs(unit.outline[0][0]-other.outline[0][0])<1e-7&&Math.abs(unit.outline[1][0]-other.outline[1][0])<1e-7))

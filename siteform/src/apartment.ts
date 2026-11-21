@@ -312,7 +312,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
             const size=area(band.outline)
             if(size<minimum-eps||frontage<settings.frontages[ndss[type].beds-1]||!validPolygon(band.outline))continue
             if(band.runs.some(run=>[...reserved,...cornerBlocks].some(core=>core.side===bay.side&&core.wing===run.wing&&
-              core.run[0]<run.run[1]+defaults.party/2&&core.run[1]>run.run[0]-defaults.party/2)))continue
+              core.run[0]<run.run[1]+defaults.party-eps&&core.run[1]>run.run[0]-defaults.party+eps)))continue
             const firstCut=interiors.findIndex(interior=>!band.outline.every(p=>inside(p,interior)))
             const floors=firstCut<0?block.floors:firstCut
             if(!floors||best&&best.floors>=floors)continue
@@ -338,12 +338,15 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       const [left,right]=endInset(block,floor)
       return [wing===0?Math.max(start,left+E):start,wing===directions.length-1?Math.min(end,stations[wing+1]-stations[wing]-right-E):end]
     }
+    // Obstructions already have clear outlines. Allocate up to the wall centreline.
+    const halfParty=defaults.party/2
     if(!bends.length){
       let x=lo
       for(const core of cores){
-        addRange([x,core.x[0]],bays)
-        addRange(core.x,bays.filter(bay=>bay.side!==core.side))
-        x=core.x[1]
+        const left=Math.max(x,core.x[0]-halfParty),right=Math.min(hi,core.x[1]+halfParty)
+        addRange([x,left],bays)
+        addRange([left,right],bays.filter(bay=>bay.side!==core.side))
+        x=right
       }
       addRange([x,hi],bays)
     }else{
@@ -354,8 +357,8 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
           const obstructions=[...reserved,...cornerBlocks].filter(core=>core.wing===wing&&core.side===bay.side)
             .sort((a,b)=>a.run[0]-b.run[0])
           for(const core of obstructions){
-            addRange([x,Math.min(end,core.run[0])],[bay],wing)
-            x=Math.max(x,core.run[1])
+            addRange([x,Math.min(end,core.run[0]-halfParty)],[bay],wing)
+            x=Math.max(x,core.run[1]+halfParty)
           }
           addRange([x,end],[bay],wing)
         }
