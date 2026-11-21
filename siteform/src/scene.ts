@@ -135,7 +135,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
             layout.units.forEach(unit=>detail(unit.type,unit.outline,
               project.apartmentSettings?.colours?.[unit.type]??ndss[unit.type].colour,'#66615b',.65))
           }
-          if(layers.travel&&showTravel){
+          if(layers.travel&&showTravel&&id===selected){
             const red='#a52d28'
             layout.travelRoutes.forEach(route=>key('Travel distance',red,route.points,z,true))
             const annotations=layout.travelRoutes.map(route=>{
@@ -214,7 +214,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       const heights=levels(b)
       if(plan){
         const poly=floorOutline(b,polys[0],floor)
-        face(poly,0,b.id===selected&&editFloor?{...material,line:editingBlue}:material,[],b.id,0,undefined,true,true,[],undefined,undefined,false,validLayout?.floors[floor],b.id===selected)
+        face(poly,0,b.id===selected&&editFloor?{...material,line:editingBlue}:material,[],b.id,0,undefined,true,true,[],undefined,undefined,false,validLayout?.floors[floor],true)
         group=poly
       }else{
         heights.forEach((top,i)=>{
