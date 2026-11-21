@@ -128,7 +128,8 @@ export function editGroundFrontage(block:Block,line:Point[]):Block {
   const setbacks=levels(block).map((_,floor):Point=>{
     if(!floor)return [0,0]
     return sides.map(({shift,alignment},side)=>{
-      const inset=Math.max(0,shift+alignment*endInset(block,floor)[side])
+      const oldInset=endInset(block,floor)[side]
+      const inset=oldInset<1e-7?0:Math.max(0,shift+alignment*oldInset)
       return inset<1e-7?0:inset
     }) as Point
   })
