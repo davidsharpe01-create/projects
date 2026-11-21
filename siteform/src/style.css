@@ -69,8 +69,6 @@ canvas.drawing { cursor: crosshair }
 .map-legend .pbsa { background: #a291bb }
 .map-scale { position: absolute; bottom: 20px; right: 17px; display: grid; justify-items: center; gap: 3px; font-size: 10px; pointer-events: none }
 .map-scale i { height: 5px; border: 1px solid var(--ink); border-top: 0 }
-.floor-picker { position: absolute; top: 17px; left: 17px; display: flex; align-items: center; gap: 8px; background: var(--white); padding: 5px 8px; font-size: 12px; border: 1px solid var(--line) }
-.floor-picker select { max-width: 100px; border: 1px solid var(--line); background: var(--white); padding: 4px }
 .draw-message, .notice { position: absolute; left: 50%; transform: translateX(-50%); bottom: 60px; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; background: var(--white); border: 1px solid var(--line); font-size: 12px; width: max-content; max-width: calc(100% - 110px) }
 .notice { top: 17px; bottom: auto; z-index: 2 }
 .sidebar { overflow: auto; background: var(--white); border-left: 1px solid var(--line); scrollbar-width: thin }
@@ -171,7 +169,6 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
 }
 
 .context-status { position: absolute; top: 17px; left: 17px; padding: 7px 9px; border: 1px solid var(--line); background: var(--white); font-size: 12px }
-.floor-picker ~ .context-status { top: 60px }
 .context-status button { margin-left: 5px; text-decoration: underline }
 
 @media (max-width: 380px) {
@@ -200,10 +197,6 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
 .mix-table td small { color: var(--muted) }
 .dwelling-colour { display: flex; align-items: center; gap: 3px; white-space: nowrap }
 .dwelling-colour input { width: 15px; height: 17px; padding: 0; border: 0; background: none }
-.apartment-key { position: absolute; top: 57px; left: 17px; display: flex; flex-wrap: wrap; gap: 7px; max-width: calc(100% - 80px); background: var(--white); border: 1px solid var(--line); padding: 6px 8px; font-size: 11px; pointer-events: none }
-.apartment-key span { display: flex; align-items: center; gap: 4px }
-.apartment-key i { width: 9px; height: 9px; border: 1px solid #766e62 }
-.apartment-key + .context-status { top: 89px }
 
 .setback-picker.editing select { border-color: var(--accent); color: var(--accent) }
 

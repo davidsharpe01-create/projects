@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, 
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
-import { coreFill, draw, home, initialLayers, projection, type Camera } from './scene'
+import { draw, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadAerial,mapboxToken,type AerialTile} from './aerial'
 import {loadContext,emptyContext,type ContextData} from './context'
@@ -627,8 +627,6 @@ function App(){
             <Button icon="target" title="Fit model" onClick={fitModel}/>
           </div>
         </div>
-        {(plan||stackView)&&<label className={'floor-picker'+(stackView?' stack-floor':'')}>Floor <select value={stackView&&selected?Math.min(shownFloor,floors(selected)-1):shownFloor} onChange={e=>{const next=Number(e.target.value);setFloor(next);if(selectedFloor)setEditFloor(Math.min(next,(selected?.floors??1)-1))}}>
-          {Array.from({length:stackView&&selected?floors(selected):storyCount},(_,i)=><option value={i} key={i}>{i===0?'Ground':i}</option>)}</select></label>}
         {actions[tool]&&<div className="draw-message">
           <span>{tool==='measure'&&draft.length===2?format(length(...draft as [Point,Point]),2)+' m':actions[tool]}</span>
           {tool==='house'&&<label className="house-storeys">Storeys <select value={drawHouseStoreys} onChange={e=>setDrawHouseStoreys(Number(e.target.value) as HouseStoreys)}><option value={2}>2 · 5.5 m</option><option value={3}>3 · 4.5 m</option></select></label>}
@@ -641,13 +639,6 @@ function App(){
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
         {(project.boundary.length>0||project.blocks.length>0)&&<div className="map-legend">{project.boundary.length>0&&<span><i className="redline"/>Site boundary</span>}{(['apartment','house','office','pbsa'] as const).filter(type=>project.blocks.some(b=>b.type===type)).map(type=>
           <span key={type}><i className={type} style={type==='house'?{background:project.colours['3B5P']}:undefined}/>{blockTypes[type].legend}</span>)}</div>}
-        {(plan||stackView)&&selectedLayout?.ok&&(stackView||selectedLayout.floors[shownFloor])&&<div className={'apartment-key'+(stackView?' stack-key':'')} aria-label="Apartment colour legend">
-          {dwellingTypes.filter(type=>(stackView?selectedUnits:selectedLayout.floors[shownFloor].units).some(unit=>unit.type===type)).map(type=>
-            <span key={type}><i style={{background:settings.colours?.[type]??ndss[type].colour}}/>{type}</span>)}
-          <span><i style={{background:coreFill}}/>Core</span><span><i style={{background:'#e7e4dd'}}/>Corridor</span>
-          {(stackView?selectedLayout.floors:[selectedLayout.floors[shownFloor]]).some(f=>f.uses.some(use=>use.kind==='commercial'))&&<span><i style={{background:'#dec4a2'}}/>Commercial</span>}
-          {(stackView?selectedLayout.floors:[selectedLayout.floors[shownFloor]]).some(f=>f.uses.some(use=>use.kind==='communal'))&&<span><i style={{background:'#c8c5ad'}}/>Communal</span>}
-        </div>}
         {anchor&&(showContext||aerial)&&<>
           {showContext&&(contextStatus?.status!=='ready'||!(layers.context&&contextStatus.data.buildings.length||layers.streets&&contextStatus.data.streetNames.length))
             ?<div className="context-status" role="status">
