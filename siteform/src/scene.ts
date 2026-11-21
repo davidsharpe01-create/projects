@@ -67,13 +67,13 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   }
   const boundary=project.boundary
   world(boundary,project.anchor?'#ead7be72':'#e9dbc7','#ad574e',2.1)
-  type Drawable=Surface & {paint:()=>void;bounds:[number,number,number,number]}
+  type Drawable=Surface & {paint:()=>void;alpha?:number;bounds:[number,number,number,number]}
   const surfaces:Drawable[]=[]
-  function addSurface(surface:Surface,paint:()=>void){
+  function addSurface(surface:Surface,paint:()=>void,alpha?:number){
     const xs=surface.shape.map(p=>p[0]),ys=surface.shape.map(p=>p[1])
     const bounds:Drawable['bounds']=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]
     if(bounds[2]<-2||bounds[0]>w+2||bounds[3]<-2||bounds[1]>h+2)return
-    surfaces.push({...surface,paint,bounds})
+    surfaces.push({...surface,paint,bounds,alpha})
   }
   type Material={roof:string; walls:string[]; line:string; floor:string}
   const white:Material={roof:'#fffefd',walls:['#efefed','#dededc','#e8e8e6','#f5f5f3'],line:'#a09f9a',floor:'#c5c4bf'}
@@ -83,7 +83,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     office:['#f0f5fb','#e0e9f3','#d6e2ee','#e6eef7','#ebf2f9'],
     pbsa:['#f6f1fa','#eae1f1','#e0d6e9','#eee7f4','#f3edf7']
   }
-  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true,holes:Point[][]=[],triangles?:Point[][],contextIndex?:number,outlineOnly=false,layout?:ApartmentFloor,showTravel=false)=>{
+  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true,holes:Point[][]=[],triangles?:Point[][],contextIndex?:number,outlineOnly=false,layout?:ApartmentFloor,showTravel=false,wallOpacity?:number)=>{
     const top=poly.map(p=>xy(p,z))
     if(!plan&&z>base){
       const winding=poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+p[0]*q[1]-p[1]*q[0]},0)
@@ -96,7 +96,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
           path(shape,material.walls[i%4],material.line,.75)
           if(storey!==undefined)path([high,xy(q,z)],undefined,material.floor,.85,false)
           storeys.slice(0,-1).forEach(level=>path([xy(p,base+level),xy(q,base+level)],undefined,material.floor,.85,false))
-        })
+        },wallOpacity)
       })
     }
     if(!cap)return
@@ -177,18 +177,18 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     const [roof,...walls]=useTints[b.type]
     const material={...white,roof:b.type==='house'?`color-mix(in srgb, ${project.colours[b.houseType]} 24%, #fff)`:roof,walls,line:b.id===selected?editingBlue:!plan&&layers.hrb&&validLayout?.hrb?'#894864':white.line}
     let group=polys.flat()
-    if(stack){
-      const storeys=levels(b,project.houseHeights)
+    if(stack&&polys[0]){
+      const outline=polys[0],storeys=levels(b,project.houseHeights)
+      const focused=Math.min(floor,storeys.length-1)
       storeys.forEach((top,i)=>{
-        const elevation=b.level+top
-        const last=i===storeys.length-1
-        const slab={...material,roof:white.roof,
-          line:i===Math.min(floor,storeys.length-1)?editingBlue:white.line}
-        if(!polys[0])return
-        const plate=floorOutline(b,polys[0],i)
-        face(plate,elevation,slab,[],b.id,elevation-.24,i,true,last,[],undefined,undefined,false,
-          validLayout?.floors[i],i===Math.min(floor,storeys.length-1))
-        if(last)group=plate
+        const base=b.level+(storeys[i-1]??0)
+        const plate=floorOutline(b,outline,i)
+        face(plate,b.level+top,material,[],b.id,base,i,false,false,[],undefined,undefined,false,undefined,false,.5)
+        if(i===focused){
+          const slab={...material,roof:white.roof}
+          face(plate,base+.025,slab,[],b.id,base+.025,i,true,false,[],undefined,undefined,false,validLayout?.floors[i],true)
+        }
+        if(i===storeys.length-1)group=plate
       })
     }else if(b.type!=='house'&&polys[0]){
       const heights=levels(b)
@@ -233,14 +233,15 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     }
   })
   const solidSurfaces=surfaces.filter(surface=>surface.contextIndex===undefined||!scene.ghosted.has(surface.contextIndex))
-  solidSurfaces.forEach((surface,index)=>{
+  const paintSurfaces=[...solidSurfaces.filter(surface=>surface.alpha===undefined),...solidSurfaces.filter(surface=>surface.alpha!==undefined)]
+  paintSurfaces.forEach((surface,index)=>{
     ctx.save()
-    if(surface.id)ctx.globalAlpha=opacity
+    if(surface.id)ctx.globalAlpha=surface.alpha??opacity
     if(!plan){
       const [left,top,right,bottom]=surface.bounds
       // Clip only where another face projects in front of this one.
-      solidSurfaces.forEach((other,i)=>{
-        if(i===index||(!surface.id&&other.id&&opacity<1))return
+      paintSurfaces.forEach((other,i)=>{
+        if(i===index||other.alpha!==undefined&&surface.alpha===undefined||(!surface.id&&other.id&&opacity<1))return
         const [x,y,r,b]=other.bounds
         if(r<=left||x>=right||b<=top||y>=bottom)return
         const mask=foregroundShape(surface,other,i>index)

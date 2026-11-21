@@ -441,7 +441,7 @@ function App(){
   }
   function chooseFloor(next:number){
     setEditFloor(next)
-    if(plan)setFloor(next)
+    if(plan||stackView)setFloor(next)
   }
   function revealBlock(id:string|null){
     setSelection(id)
@@ -452,7 +452,9 @@ function App(){
     const block=project.blocks.find(b=>b.id===id)
     if(!block||block.type==='house'||block.floors<2)return
     setSelection(block.id)
-    chooseFloor(Math.min(block.floors-1,Math.max(1,hitFloor)))
+    const upperFloor=Math.min(block.floors-1,Math.max(1,hitFloor))
+    if(plan)chooseFloor(upperFloor)
+    else setEditFloor(upperFloor)
   }
   function clickCanvas(e:MouseEvent<HTMLCanvasElement>){
     const screen=drawingClick.current
@@ -472,7 +474,7 @@ function App(){
       firstBlockClick.current=hit?{id:hit,floor:hitFloor}:null
       if(handle)return
       revealBlock(hit)
-      if(hit&&!plan)setFloor(hitFloor)
+      if(hit&&!plan)setFloor(hit===selection&&stackView?hitFloor:0)
       if(!hit||hit!==selection)setEditFloor(0)
       else if(selectedFloor&&!plan)setEditFloor(Math.max(1,hitFloor))
       return
