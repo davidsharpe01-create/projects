@@ -120,6 +120,7 @@ function App(){
   const scene=useRef<ReturnType<typeof draw>>({pick:()=>null,pickContext:()=>undefined,pickGhost:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
   const drawingClick=useRef<Point|null>(null)
+  const firstBlockClick=useRef<{id:string;floor:number}|null>(null)
   const totals=development(project)
   const settings=apartmentSettings(project)
   const selectedLayout=selected?apartmentLayout(selected,project):undefined
@@ -409,7 +410,7 @@ function App(){
       return
     }
     if(e.button!==0||d.navigation)return
-    if(tool==='select')drawingClick.current=d.screen
+    if(tool==='select'){drawingClick.current=d.screen;return}
     if(d.action==='vertices'||d.action==='setback')return
     if(d.action==='height'&&!scene.current.pick(d.screen))return
     if(tool==='ghost'||tool==='show'){
@@ -424,14 +425,6 @@ function App(){
       return
     }
     if(tool==='vertices'){choose('select');setSelection(null);return}
-    if(tool==='select'){
-      const hit=scene.current.pick(d.screen)
-      setSelection(hit)
-      if(hit&&hit===selection&&stackView)setFloor(scene.current.pickFloor(d.screen))
-      if(!hit||hit!==selection)setEditFloor(0)
-      else if(selectedFloor&&!plan)setEditFloor(Math.max(1,scene.current.pickFloor(d.screen)))
-      return
-    }
     if(drawTool)drawingClick.current=d.screen
     else if(tool==='measure')placePoint(d.screen)
   }
@@ -447,6 +440,14 @@ function App(){
     setEditFloor(next)
     if(plan)setFloor(next)
   }
+  function revealBlock(id:string|null){
+    setSelection(id)
+    if(!plan){
+      const block=project.blocks.find(b=>b.id===id)
+      if(block&&apartmentLayout(block,project)?.ok)setBuildingView('apartments')
+      else if(id!==selection)setBuildingView('massing')
+    }
+  }
   function enterBuilding(id:string|null,hitFloor:number){
     const block=project.blocks.find(b=>b.id===id)
     if(!block||block.type==='house'||block.floors<2)return
@@ -457,8 +458,23 @@ function App(){
     const screen=drawingClick.current
     drawingClick.current=null
     if(!screen)return
-    if(tool==='select'&&e.detail===2){
-      enterBuilding(scene.current.pick(screen)??(scene.current.handles.some(p=>length(p,screen)<12)?selection:null),plan?shownFloor:scene.current.pickFloor(screen))
+    if(tool==='select'){
+      const handle=scene.current.handles.some(p=>length(p,screen)<12)||scene.current.setbackHandles.some(p=>length(p,screen)<12)
+      const hit=handle?selection:scene.current.pick(screen)
+      const hitFloor=plan?shownFloor:scene.current.pickFloor(screen)
+      if(e.detail===2){
+        // A first click can open the floor stack and change what is under the pointer.
+        const first=firstBlockClick.current
+        enterBuilding(first?.id??hit,first?.floor??hitFloor)
+        firstBlockClick.current=null
+        return
+      }
+      firstBlockClick.current=hit?{id:hit,floor:hitFloor}:null
+      if(handle)return
+      revealBlock(hit)
+      if(hit&&!plan)setFloor(hitFloor)
+      if(!hit||hit!==selection)setEditFloor(0)
+      else if(selectedFloor&&!plan)setEditFloor(Math.max(1,hitFloor))
       return
     }
     if(!drawTool)return
@@ -684,7 +700,7 @@ function App(){
         </div>
         <div className="block-list">
           <h2 className="section-label">Buildings{project.blocks.length>0&&<span>{project.blocks.length}</span>}</h2>
-          {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');setSelection(b.id);setFloor(0);setEditFloor(0)}} onDoubleClick={()=>enterBuilding(b.id,1)}>
+          {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');revealBlock(b.id);setFloor(0);setEditFloor(0)}} onDoubleClick={()=>enterBuilding(b.id,1)}>
             <span className={'block-icon '+b.type}><Icon name={b.type==='apartment'?'building':b.type} size={16}/></span>
             <span className="block-name"><strong>{b.name}</strong><small>{blockTypes[b.type].label}{higherRiskBlocks.has(b.id)?' (HRB)':''}</small></span>
             <span className="storeys">{floors(b)}F</span><Icon name="right" size={13}/>
