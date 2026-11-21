@@ -133,7 +133,7 @@ test('rejects a bend where the inside edge folds back',()=>{
 })
 
 test('adds aligned cores when corridor junctions are over the single-direction limit',()=>{
-  const block=rectangle(84)
+  const block=rectangle(96)
   const relaxed=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,nonHrbTravel:40}})
   assert.ok(relaxed.ok)
   assert.equal(relaxed.floors[0].cores.length,1)
@@ -149,7 +149,7 @@ test('adds aligned cores when corridor junctions are over the single-direction l
 })
 
 test('adds lower cores when the upper setback has room for only one core',()=>{
-  const answer=solveApartments({...rectangle(84),setbacks:[[0,0],[36,36]]},project)
+  const answer=solveApartments({...rectangle(96),setbacks:[[0,0],[42,42]]},project)
   assert.ok(answer.ok)
   assert.equal(answer.floors[0].cores.length,3)
   assert.ok(answer.floors.slice(1).every(floor=>floor.cores.length===1))
@@ -355,4 +355,18 @@ test('a bent double-loaded block mirrors qualifying bays and keeps the end front
   assert.equal(ground.units.filter(unit=>unit.outline.some(([x])=>Math.abs(x-.75)<1e-7)).length,2)
   assert.equal(ground.units.filter(unit=>unit.outline.some(([,y])=>Math.abs(y-41.25)<1e-7)).length,2)
   assert.ok(ground.units.every(unit=>unit.area>=unit.minimum-1e-7))
+})
+
+test('larger apartments take the outer ends of straight and bent residential floors',()=>{
+  for(const line of [[[0,0],[54,0]],[[0,0],[42,0],[42,42]]] as Block['line'][]){
+    const result=solveApartments({...rectangle(),line,apartmentLayout:defaultApartmentOptions},project)
+    assert.ok(result.ok)
+    const offset=defaults.external+defaults.party/2
+    for(const atEnd of [([x]:Block['line'][number])=>Math.abs(x-offset)<1e-7,
+      ([x,y]:Block['line'][number])=>Math.abs((line.length===2?54-x:42-y)-offset)<1e-7]){
+      const units=result.floors[1].units.filter(unit=>unit.outline.some(atEnd))
+      assert.equal(units.length,2)
+      assert.ok(units.every(unit=>['2B4P','3B5P','3B6P'].includes(unit.type)))
+    }
+  }
 })

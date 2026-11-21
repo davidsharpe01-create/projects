@@ -24,7 +24,9 @@ export const areaTarget=(type:DwellingType,project:Inputs)=>{
   return Math.max(ndss[type].areas[0],apartmentSettings(project).targets[type]??defaultTargets[type])
 }
 
-function allocate(span:Span,bay:Bay,project:Inputs,options:ApartmentSettings) {
+const largeApartment=(type:DwellingType)=>ndss[type].people>=4
+
+function allocate(span:Span,bay:Bay,project:Inputs,options:ApartmentSettings,ends:boolean[]) {
   const width=span[1]-span[0],depth=bay.y[1]-bay.y[0]
   const mixTotal=dwellingTypes.reduce((sum,t)=>sum+options.mix[t],0)
   const items=dwellingTypes.map(type=>{
@@ -52,11 +54,22 @@ function allocate(span:Span,bay:Bay,project:Inputs,options:ApartmentSettings) {
     if(selection.length!==count)continue
     const deviation=items.reduce((sum,t)=>sum+Math.abs((used.get(t.type)??0)/count-t.share),0)
     const desired=selection.reduce((sum,t)=>sum+t.desired,0)
-    const score=deviation*1.6+Math.max(0,desired-width)/width*2+Math.max(0,width-desired)/width*.65
+    const endSlots=count===1?Number(ends.some(Boolean)):ends.filter(Boolean).length
+    const largeCount=selection.filter(item=>largeApartment(item.type)&&item.share>0).length
+    const score=deviation*1.6-.12*Math.min(endSlots,largeCount)+Math.max(0,desired-width)/width*2+Math.max(0,width-desired)/width*.65
     if(!best||score<best.score-eps)best={score,items:selection}
   }
   if(!best)return []
-  const units=best.items
+  const units=[...best.items]
+  for(const [end,atEnd] of ends.entries()){
+    if(!atEnd)continue
+    const index=end?units.length-1:0
+    const candidate=units.reduce((best,item,i)=>{
+      if((ends[0]&&end===1&&i===0&&index!==0)||!largeApartment(item.type)||!item.share)return best
+      return best<0||item.minimum>units[best].minimum?i:best
+    },-1)
+    if(candidate>=0)[units[index],units[candidate]]=[units[candidate],units[index]]
+  }
   const minimum=units.reduce((sum,item)=>sum+item.min,0)
   const desired=units.reduce((sum,item)=>sum+item.desired,0)
   const toTarget=desired>minimum?Math.min(1,(width-minimum)/(desired-minimum)):0
@@ -380,8 +393,15 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         corridorStations:[frame.stationAt(left,corridorCentre),frame.stationAt(right,corridorCentre)],
         corridorJunctions:[frame.worldPoint(left,corridorEdge),frame.worldPoint(right,corridorEdge)]}
     }
+    function frontageEnds(zone:Span,bay:Bay,wing?:number){
+      const bounds=wing===undefined?[lo,hi]:bayLimits(wing,bay,0)
+      return [
+        (wing===undefined||wing===0)&&Math.abs(zone[0]-bounds[0])<eps,
+        (wing===undefined||wing===directions.length-1)&&Math.abs(zone[1]-bounds[1])<eps
+      ]
+    }
     function allocateRange(zone:Span,eligible:Bay[],wing?:number):ApartmentBayUnit[]{
-      const units=allocate(zone,eligible[0],project,settings).flatMap(unit=>eligible.map(bay=>({...unit,bay})))
+      const units=allocate(zone,eligible[0],project,settings,frontageEnds(zone,eligible[0],wing)).flatMap(unit=>eligible.map(bay=>({...unit,bay})))
       return wing===undefined?units:units.map(unit=>bentUnit(unit,wing,unit.x))
     }
     const typical=ranges.map(({zone,eligible,wing})=>allocateRange(zone,eligible,wing))
@@ -391,6 +411,9 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       for(const [index,{zone,eligible:[bay],wing}] of ranges.entries()){
         if(wing===undefined)continue
         const original=typical[index]
+        const ends=frontageEnds(zone,bay,wing)
+        const largeEnds=(row:ApartmentBayUnit[])=>ends.filter((atEnd,end)=>atEnd&&row.some(unit=>
+          largeApartment(unit.type)&&Math.abs(unit.x[end]-zone[end]+(end?halfParty:-halfParty))<eps)).length
         const originalArea=original.reduce((sum,unit)=>sum+unit.area,0)
         let mirrored=0
         for(const [other,range] of ranges.entries()){
@@ -403,6 +426,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
             ...matches.map(unit=>bentUnit({...unit,bay},wing,unit.x)),
             ...allocateRange([right,zone[1]],[bay],wing)
           ]
+          if(largeEnds(candidate)<largeEnds(typical[index]))continue
           if(candidate.length<original.length||candidate.reduce((sum,unit)=>sum+unit.area,0)<originalArea-defaults.party*clearBay-eps)continue
           typical[index]=candidate
           mirrored=matches.length
