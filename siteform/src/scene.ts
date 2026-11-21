@@ -184,10 +184,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
         const base=b.level+(storeys[i-1]??0)
         const plate=floorOutline(b,outline,i)
         face(plate,b.level+top,material,[],b.id,base,i,false,false,[],undefined,undefined,false,undefined,false,.5)
-        if(i===focused){
-          const slab={...material,roof:white.roof}
-          face(plate,base+.025,slab,[],b.id,base+.025,i,true,false,[],undefined,undefined,false,validLayout?.floors[i],true)
-        }
+        const slab={...material,roof:white.roof,line:i===focused?editingBlue:white.line}
+        face(plate,base+.025,slab,[],b.id,base+.025,i,true,false,[],undefined,undefined,false,validLayout?.floors[i],i===focused)
         if(i===storeys.length-1)group=plate
       })
     }else if(b.type!=='house'&&polys[0]){
