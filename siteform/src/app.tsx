@@ -60,7 +60,7 @@ function App(){
   const [plan,setPlan]=useState(false)
   const [floor,setFloor]=useState(0)
   const [buildingView,setBuildingView]=useState<BuildingView>('massing')
-  const [floorSpacing,setFloorSpacing]=useState(9)
+  const [floorSpacing,setFloorSpacing]=useState(0)
   const activeBuildingView=selected&&(buildingView!=='apartments'||selected.apartmentLayout)?buildingView:'massing'
   const stackView=!plan&&activeBuildingView!=='massing'
   const [editFloor,setEditFloor]=useState(0)
@@ -444,7 +444,10 @@ function App(){
     setSelection(id)
     if(!plan){
       const block=project.blocks.find(b=>b.id===id)
-      if(block&&apartmentLayout(block,project)?.ok)setBuildingView('apartments')
+      if(block&&apartmentLayout(block,project)?.ok){
+        if(id!==selection||activeBuildingView!=='apartments')setFloorSpacing(0)
+        setBuildingView('apartments')
+      }
       else if(id!==selection)setBuildingView('massing')
     }
   }
