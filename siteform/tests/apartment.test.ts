@@ -370,3 +370,22 @@ test('larger apartments take the outer ends of straight and bent residential flo
     }
   }
 })
+
+test('a smaller apartment fills each usable bay at a setback without moving the adjacent partitions',()=>{
+  const block={...rectangle(),line:[[0,0],[42,0],[42,42]] as Block['line'],floors:4,
+    apartmentLayout:defaultApartmentOptions}
+  const full=solveApartments(block,project)
+  const stepped=solveApartments({...block,setbacks:[[0,0],[4,0]]},project)
+  assert.ok(full.ok&&stepped.ok)
+  const upper=stepped.floors[1]
+  const endUnits=upper.units.filter(unit=>unit.outline.some(([x])=>Math.abs(x-4.75)<1e-7))
+  assert.equal(endUnits.length,2)
+  for(const unit of endUnits){
+    assert.equal(unit.type,'1B1P')
+    assert.ok(unit.area>=unit.minimum)
+  }
+  for(const unit of full.floors[1].units.filter(unit=>unit.outline.every(([x])=>x>=10))){
+    assert.ok(upper.units.some(candidate=>JSON.stringify(candidate.outline)===JSON.stringify(unit.outline)))
+  }
+  assert.ok(upper.travel<=30&&upper.betweenCores<=30)
+})

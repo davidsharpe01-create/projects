@@ -471,6 +471,28 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
           if(floor===0&&uses.some(use=>use.wing===wing&&use.bay===unit.bay&&use.x[1]>run[0]-defaults.party/2+eps&&use.x[0]<run[1]+defaults.party/2-eps))return []
           return [{unit,index:`${rowIndex}:${index}`}]
         })
+        if(floor===0||remaining[1]-remaining[0]<=eps||
+          (remaining[0]<=zone[0]+eps&&remaining[1]>=zone[1]-eps))return retained
+        // Keep the stacked partitions that still fit and refill leftover frontage at the cut.
+        for(const bay of eligible){
+          let start=remaining[0]
+          const occupied=retained.filter(({unit})=>unit.bay===bay).map(({unit})=>unit)
+          const gaps:Span[]=[]
+          for(const unit of occupied){
+            gaps.push([start,unit.x[0]-halfParty])
+            start=unit.x[1]+halfParty
+          }
+          gaps.push([start,remaining[1]])
+          for(const [gap,span] of gaps.entries()){
+            if(span[1]-span[0]<=eps)continue
+            const ends=[Math.abs(span[0]-left)<eps,Math.abs(span[1]-right)<eps]
+            const units=allocate(span,bay,project,settings,ends)
+            retained.push(...units.map((unit,index)=>({
+              unit:wing===undefined?unit:bentUnit(unit,wing,unit.x),
+              index:`${rowIndex}:setback:${bay.side}:${gap}:${index}`
+            })))
+          }
+        }
         return retained
       })
       if(floor>0||!fullyAllocatedGround){
