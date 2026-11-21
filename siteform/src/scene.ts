@@ -1,12 +1,14 @@
 import earcut from 'earcut'
+import {apartmentLayout,type ApartmentFloor} from './apartment'
+import {ndss} from './ndss'
 import type {SnapGuide} from './snap'
 import {roadWidths,type ContextData} from './context'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
 import { footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
-export type Layers = {context:boolean; streets:boolean; grid:boolean; labels:boolean}
-export const initialLayers:Layers={context:true,streets:true,grid:false,labels:true}
+export type Layers = {context:boolean; streets:boolean; hrb:boolean; grid:boolean; labels:boolean}
+export const initialLayers:Layers={context:true,streets:true,hrb:true,grid:false,labels:true}
 export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const angle=plan?0:c.angle
   const s=Math.min(w/185,h/(plan?133:108))*c.zoom
@@ -20,7 +22,7 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
   return {project,invert,s,depth}
 }
-type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; context:ContextData; ghosted:ReadonlySet<number>}
+type Scene = {camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; editBoundary:boolean; drafting?:boolean; context:ContextData; ghosted:ReadonlySet<number>}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
@@ -72,7 +74,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     pbsa:{roof:'#c8b8da',walls:['#a291ba','#8b77a6','#9c88b1','#b0a0c5'],line:'#69527e',floor:'#ede6f5'}
   }
   const house={roof:'#d8b284',walls:['#b28b61','#a67d55','#b59069','#c6a27a'],line:'#8f6f50',floor:'#e4c8a8'}
-  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true,holes:Point[][]=[],triangles?:Point[][],contextIndex?:number,outlineOnly=false)=>{
+  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true,holes:Point[][]=[],triangles?:Point[][],contextIndex?:number,outlineOnly=false,layout?:ApartmentFloor)=>{
     const top=poly.map(p=>xy(p,z))
     if(!plan&&z>base){
       const winding=poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+p[0]*q[1]-p[1]*q[0]},0)
@@ -98,7 +100,15 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       }
     }else{
       addSurface({id,contextIndex,shape:top,depth:roofDepth,roof:topRoof,floor:storey},
-        ()=>{if(!outlineOnly)path(top,material.roof,material.line,id&&id===selected?1.75:.8)})
+        ()=>{
+          if(outlineOnly)return
+          path(top,material.roof,material.line,id&&id===selected?1.75:.8)
+          if(!layout)return
+          world(layout.corridor,'#e7e4dd','#a9a298',.7,true,z)
+          layout.cores.forEach(core=>world(core,'#b5a797','#716357',.8,true,z))
+          layout.uses.forEach(use=>world(use.outline,use.kind==='commercial'?'#dec4a2':'#c8c5ad','#8c8173',.7,true,z))
+          layout.units.forEach(unit=>world(unit.outline,project.apartmentSettings?.colours?.[unit.type]??ndss[unit.type].colour,'#66615b',.65,true,z))
+        })
     }
   }
   const contextMaterial={roof:'#dedbd3',walls:['#cdc8be','#bdb8ae','#c8c3b9','#d4cfc5'],line:'#9e988d',floor:'#dedbd3'}
@@ -127,7 +137,11 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     if(plan && floor>=levels(b).length)return
     const polys=footprints(b,project.targets),z=plan?0:height(b)+b.level
     const roof=project.colours[b.houseType]
-    const material=b.type==='house'?{...house,roof,line:b.id===selected?'#286957':house.line}:
+    const layout=scene.drafting?undefined:apartmentLayout(b,project)
+    const validLayout=layout?.ok?layout:undefined
+    const material=!plan&&layers.hrb&&validLayout?.hrb
+      ?{roof:'#e2aec2',walls:['#c891a8','#ac7890','#c188a2','#d1a1b5'],line:'#894864',floor:'#f5dce6'}
+      :b.type==='house'?{...house,roof,line:b.id===selected?'#286957':house.line}:
       b.id===selected&&b.type==='apartment'?{roof:'#b7d7ca',walls:['#81ab9b','#568675','#6e9b8c','#9bc1b3'],line:'#286957',floor:'#d5e7df'}:
       bulk[b.type]
     let group=polys.flat()
@@ -135,7 +149,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       const heights=levels(b)
       if(plan){
         const poly=floorOutline(b,polys[0],floor)
-        face(poly,0,material,[],b.id)
+        face(poly,0,material,[],b.id,0,undefined,true,true,[],undefined,undefined,false,validLayout?.floors[floor])
         group=poly
       }else{
         heights.forEach((top,i)=>{
@@ -146,7 +160,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
           const colour=i>0&&i===editFloor&&b.id===selected&&editFrontage
             ?{...material,walls:['#7fa9c0','#5b889f','#6b98ae','#91b4c6'],floor:'#dceaf0'}
             :material
-          face(poly,b.level+top,colour,[],b.id,b.level+(heights[i-1]??0),i,cap,last)
+          face(poly,b.level+top,colour,[],b.id,b.level+(heights[i-1]??0),i,cap,last,[],undefined,undefined,false,
+            last&&b.id===selected?validLayout?.floors[i]:undefined)
           if(last)group=poly
         })
       }

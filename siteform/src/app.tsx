@@ -6,6 +6,8 @@ import { draw, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadContext,emptyContext,type ContextData} from './context'
 import {blankProject,defaultAddress,isDefaultAddress,restoreProject} from './project'
+import {apartmentLayout,apartmentSettings,areaTarget,defaultApartmentOptions,type ApartmentOptions} from './apartment'
+import {dwellingTypes,ndss,ndssVersion} from './ndss'
 import './style.css'
 
 type Tool=BlockType|'select'|'boundary'|'move'|'rotate'|'measure'|'vertices'|'ghost'|'show'
@@ -28,12 +30,12 @@ const format=(n:number,places=0)=>n.toLocaleString('en-GB',{maximumFractionDigit
 const pointDiff=(p:Point,q:Point):Point=>[p[0]-q[0],p[1]-q[1]]
 type Drag={screen:Point;point:Point;camera:Camera;project:Project;id:string|null;action:'orbit'|'pan'|'move'|'rotate'|'vertices'|'height'|'setback'|'draw';vertex:number;changed:boolean;last:Point;navigation:boolean;floor:number}
 
-function NumberField({label,value,update,min,max,step=1,unit='m'}:{label:string;value:number;update:(n:number)=>void;min:number;max?:number;step?:number;unit?:string}){
+function NumberField({label,value,update,min,max,step=1,unit='m'}:{label:string;value:number;update:(n:number)=>void|boolean;min:number;max?:number;step?:number;unit?:string}){
   const [draft,change]=useState(String(value))
   useEffect(()=>change(String(value)),[value])
   return <label className="field"><span>{label}</span><div><input type="number" value={draft} min={min} max={max} step={step}
     onChange={e=>change(e.target.value)}
-    onBlur={()=>{const n=Number(draft);if(draft.trim()&&Number.isFinite(n)){const v=Math.min(max??Infinity,Math.max(min,step===1?Math.round(n):n));change(String(v));update(v)}else change(String(value))}}/>{unit&&<small>{unit}</small>}</div></label>
+    onBlur={()=>{const n=Number(draft);if(draft.trim()&&Number.isFinite(n)){const v=Math.min(max??Infinity,Math.max(min,step===1?Math.round(n):n));change(String(update(v)===false?value:v))}else change(String(value))}}/>{unit&&<small>{unit}</small>}</div></label>
 }
 function Button({icon,children,onClick,disabled=false,active=false,kind='',title}:{icon:string;children?:ReactNode;onClick:()=>void;disabled?:boolean;active?:boolean;kind?:string;title?:string}){
   return <button type="button" title={title} aria-label={title} disabled={disabled} aria-pressed={active||undefined} className={kind+' '+(active?'active':'')} onClick={onClick}><Icon name={icon}/>{children}</button>
@@ -95,7 +97,19 @@ function App(){
   const drag=useRef<Drag|null>(null)
   const drawingClick=useRef<Point|null>(null)
   const totals=development(project)
+  const settings=apartmentSettings(project)
+  const selectedLayout=selected?apartmentLayout(selected,project):undefined
+  const selectedUnits=selectedLayout?.ok?selectedLayout.floors.flatMap(f=>f.units):[]
   const warnings=project.blocks.flatMap(b=>blockStats(b,project).outside?[b.name+' extends beyond the site boundary.']:[])
+  for(const block of project.blocks){
+    const layout=apartmentLayout(block,project)
+    if(!layout)continue
+    if(!layout.ok){warnings.push(block.name+' · '+layout.reason);continue}
+    layout.floors.forEach((layoutFloor,index)=>{
+      if(layoutFloor.travel>settings.travel+.00001)warnings.push(block.name+' · Floor '+index+' corridor route '+format(layoutFloor.travel,1)+' m exceeds '+settings.travel+' m.')
+    })
+    if(layout.hrb)warnings.push(block.name+' · Indicative higher-risk building threshold met ('+block.floors+' storeys; top floor '+format(layout.topStoreyHeight,1)+' m above datum).')
+  }
   if(totals.gia===null)warnings.push('GIA is unavailable where an internal footprint cannot be calculated.')
   if(project.boundary.length<3)warnings.unshift('Draw a site boundary to check containment.')
   const storyCount=Math.max(1,...project.blocks.map(floors))
@@ -108,10 +122,23 @@ function App(){
     return()=>ro.disconnect()
   },[])
   useLayoutEffect(()=>{
-    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,ghosted})
+    if(canvas.current)scene.current=draw(canvas.current,{camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,ghosted,drafting:!!preview})
   },[camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,ghosted])
-  function commit(next:Project){
+  function commit(next:Project,trimUpper=false){
+    for(const block of next.blocks){
+      const layout=apartmentLayout(block,next)
+      if(!layout||layout.ok)continue
+      const truncated=trimUpper&&layout.floor!==undefined&&layout.floor>0?resizeStoreys(block,layout.floor):null
+      if(truncated&&apartmentLayout(truncated,next)?.ok){
+        next={...next,blocks:next.blocks.map(b=>b===block?truncated:b)}
+        setNotice(block.name+' · Floor '+layout.floor+' and above removed. '+layout.reason)
+      }else{
+        setNotice(block.name+' · '+layout.reason)
+        return false
+      }
+    }
     setHistory(h=>JSON.stringify(next)===JSON.stringify(h.current)?h:{past:[...h.past.slice(-49),h.current],current:next,future:[]})
+    return true
   }
   function undo(){setHistory(h=>h.past.length?{past:h.past.slice(0,-1),current:h.past.at(-1)!,future:[h.current,...h.future]}:h)}
   function redo(){setHistory(h=>h.future.length?{past:[...h.past,h.current],current:h.future[0],future:h.future.slice(1)}:h)}
@@ -123,8 +150,17 @@ function App(){
   function switchView(next:boolean){setPlan(next);if(!next)setFloor(0);if(draft.length||tool==='vertices')choose('select')}
   function setOption(next:typeof menu){setMenu(m=>m===next?null:next)}
   function updateBlock(block:Block){
-    if(!footprintSatisfies(block,project.targets)){setNotice('The frontage and depth must create a valid footprint.');return}
-    commit({...project,blocks:project.blocks.map(b=>b.id===block.id?block:b)})
+    if(!footprintSatisfies(block,project.targets)){setNotice('The frontage and depth must create a valid footprint.');return false}
+    return commit({...project,blocks:project.blocks.map(b=>b.id===block.id?block:b)})
+  }
+  function subdivide(block:Block){
+    const mode=block.depth<14?'single':'double'
+    if(commit({...project,blocks:project.blocks.map(b=>b===block?{...b,apartmentLayout:{...defaultApartmentOptions,mode,mix:{...settings.mix}}}:b)})){
+      setPlan(true);setFloor(0)
+    }
+  }
+  function updateLayout(block:Block,options:Partial<ApartmentOptions>){
+    return updateBlock({...block,apartmentLayout:{...block.apartmentLayout!,...options}})
   }
   function finish(){
     if(tool==='boundary'){
@@ -311,7 +347,7 @@ function App(){
     setGuide(undefined)
     if(d.changed){
       if(preview){
-        if((!preview.boundary.length||validPolygon(preview.boundary))&&preview.blocks.every(b=>footprintSatisfies(b,preview.targets)))commit(preview)
+        if((!preview.boundary.length||validPolygon(preview.boundary))&&preview.blocks.every(b=>footprintSatisfies(b,preview.targets)))commit(preview,d.action==='setback')
         else setNotice('This edit would create invalid geometry. The previous shape was restored.')
         setPreview(null)
       }
@@ -475,7 +511,7 @@ function App(){
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['context','Existing buildings'],['streets','Streets'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>(id!=='context'&&id!=='streets')||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
+            {([['context','Existing buildings'],['streets','Streets'],['hrb','Higher-risk highlight'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>(id!=='context'&&id!=='streets')||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
               setLayers({...layers,[id]:e.target.checked})
               if(id==='context'&&!e.target.checked&&(tool==='ghost'||tool==='show'))choose('select')
             }}/>{label}</label>)}
@@ -513,6 +549,13 @@ function App(){
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
         {(project.boundary.length>0||project.blocks.length>0)&&<div className="map-legend">{project.boundary.length>0&&<span><i className="redline"/>Site boundary</span>}{(['apartment','house','office','pbsa'] as const).filter(type=>project.blocks.some(b=>b.type===type)).map(type=>
           <span key={type}><i className={type} style={type==='house'?{background:project.colours['3B5P']}:undefined}/>{blockTypes[type].legend}</span>)}</div>}
+        {plan&&selectedLayout?.ok&&selectedLayout.floors[shownFloor]&&<div className="apartment-key" aria-label="Apartment plan legend">
+          {dwellingTypes.filter(type=>selectedLayout.floors[shownFloor].units.some(unit=>unit.type===type)).map(type=>
+            <span key={type}><i style={{background:settings.colours?.[type]??ndss[type].colour}}/>{type}</span>)}
+          <span><i style={{background:'#b5a797'}}/>Core</span><span><i style={{background:'#e7e4dd'}}/>Corridor</span>
+          {selectedLayout.floors[shownFloor].uses.some(use=>use.kind==='commercial')&&<span><i style={{background:'#dec4a2'}}/>Commercial</span>}
+          {selectedLayout.floors[shownFloor].uses.some(use=>use.kind==='communal')&&<span><i style={{background:'#c8c5ad'}}/>Communal</span>}
+        </div>}
         {anchor&&showContext&&<>
           {contextStatus?.status!=='ready'||!(layers.context&&contextStatus.data.buildings.length||layers.streets&&contextStatus.data.roads.length)
             ?<div className="context-status" role="status">
@@ -545,7 +588,7 @@ function App(){
             <div><span>Homes</span><strong>{totals.homes===null?'—':format(totals.homes)}</strong></div>
             <div><span title="Dwellings per hectare">Density</span><strong>{totals.site&&totals.density!==null?format(totals.density,1):'—'} <small>dph</small></strong></div>
           </div>
-          <p className="summary-note">{format(totals.houses)} houses · {totals.apartments===null?'Apartment estimate unavailable':format(totals.apartments)+' estimated apartments'}</p>
+          <p className="summary-note">{format(totals.houses)} houses · {totals.estimatedApartments===null?'Apartment estimate unavailable':format(totals.estimatedApartments??0)+' estimated apartments'}{totals.generatedApartments>0?' · '+format(totals.generatedApartments)+' subdivided apartments':''}</p>
           <div className="yield-setting">
             <NumberField label="Apartment GIA per home" value={totals.apartmentAreaPerHome} min={1} step={.1} unit="m²"
               update={apartmentAreaPerHome=>{
@@ -574,7 +617,7 @@ function App(){
             <div className="property-grid">
               {selected.type!=='house'?<>
                 <NumberField label="Building depth" value={selected.depth} min={3} max={80} step={.1} update={depth=>updateBlock({...selected,depth})}/>
-                <NumberField label="Storeys" value={selected.floors} min={blockStoreys.min} max={blockStoreys.max} unit="" update={floors=>{setFloor(f=>Math.min(f,floors-1));setEditFloor(f=>Math.min(f,floors-1));updateBlock(resizeStoreys(selected,floors))}}/>
+                <NumberField label="Storeys" value={selected.floors} min={blockStoreys.min} max={blockStoreys.max} unit="" update={floors=>{if(!updateBlock(resizeStoreys(selected,floors)))return false;setFloor(f=>Math.min(f,floors-1));setEditFloor(f=>Math.min(f,floors-1))}}/>
                 <NumberField label="Ground floor" value={selected.ground} min={2.5} max={12} step={.1} update={ground=>updateBlock({...selected,ground})}/>
                 <NumberField label="Upper floors" value={selected.upper} min={2.5} max={12} step={.1} update={upper=>updateBlock({...selected,upper})}/>
               </>:<>
@@ -590,6 +633,25 @@ function App(){
                   {Array.from({length:selected.floors},(_,i)=><option key={i} value={i}>{i===0?'Ground':`Floor ${i}`}</option>)}
                 </select>
               </label>}
+            {selected.type==='apartment'&&<div className="subdivision">
+              {selected.apartmentLayout?<>
+                <div className="subdivision-actions">
+                  <button type="button" className="secondary" onClick={()=>{setPlan(true);setFloor(selectedFloor)}}>View apartment plan</button>
+                  <button type="button" className="secondary" onClick={()=>updateBlock({...selected,apartmentLayout:undefined})}>Remove subdivision</button>
+                </div>
+                <p className="summary-note">{selectedUnits.length} apartments · {selectedUnits.filter(u=>u.area+1e-7>=u.target).length} meet target area</p>
+                <div className="property-grid">
+                  <label className="field"><span>Corridor layout</span><select value={selected.apartmentLayout.mode} onChange={e=>updateLayout(selected,{mode:e.target.value as ApartmentOptions['mode']})}><option value="single">Single-loaded</option><option value="double">Double-loaded</option></select></label>
+                  <label className="field"><span>Core side</span><select value={selected.apartmentLayout.coreSide} onChange={e=>updateLayout(selected,{coreSide:e.target.value as ApartmentOptions['coreSide']})}><option value="front">Front</option><option value="rear">Rear</option></select></label>
+                  <NumberField label="Core position" value={selected.apartmentLayout.corePosition??50} min={0} max={100} unit="%" update={corePosition=>updateLayout(selected,{corePosition})}/>
+                  {selectedLayout?.ok&&selectedLayout.hrb&&<label className="field"><span>Higher-risk core</span><select value={selected.apartmentLayout.hrbCores} onChange={e=>updateLayout(selected,{hrbCores:Number(e.target.value) as 1|2})}><option value={1}>1 × 70 m²</option><option value={2}>2 × 50 m²</option></select></label>}
+                  <NumberField label="Ground floor commercial" value={selected.apartmentLayout.commercial??0} min={0} max={100-(selected.apartmentLayout.communal??0)} unit="%" update={commercial=>updateLayout(selected,{commercial})}/>
+                  <NumberField label="Ground floor communal" value={selected.apartmentLayout.communal??0} min={0} max={100-(selected.apartmentLayout.commercial??0)} unit="%" update={communal=>updateLayout(selected,{communal})}/>
+                </div>
+                <p className="summary-note">Ground floor uses are shares of the bays after core and corridor space. Homes count complete units.</p>
+                <button type="button" className="secondary" onClick={()=>updateLayout(selected,{mix:{...settings.mix}})}>Apply target mix to this block</button>
+              </>:<button type="button" className="primary" onClick={()=>subdivide(selected)}>Subdivide into apartments</button>}
+            </div>}
             <div className="property-actions">
               {tool==='select'&&<span className="vertex-hint">{!plan&&selected.type!=='house'?(selectedFloor?'Drag either blue end handle':'Select an upper floor for setbacks'):'Drag frontage handles to edit'}</span>}
               <Button icon="copy" kind="square" title="Duplicate block" onClick={()=>duplicate(selected)}/>
@@ -597,12 +659,50 @@ function App(){
             </div>
           </div>
         </Panel>}
+        <Panel title="Dwelling mix and standards" icon="settings" initial={false}>
+          <div className="properties dwelling-settings">
+            <div className="property-grid">
+              <NumberField label="Clear corridor width" value={settings.corridor} min={1} step={.1} update={corridor=>commit({...project,apartmentSettings:{...settings,corridor}})}/>
+              <NumberField label="Corridor route allowance" value={settings.travel} min={1} step={.1} update={travel=>commit({...project,apartmentSettings:{...settings,travel}})}/>
+              {settings.frontages.map((value,i)=><NumberField key={i} label={`Min frontage · ${i+1} bed`} value={value} min={1} step={.1} update={next=>{
+                const frontages=[...settings.frontages] as typeof settings.frontages
+                frontages[i]=next
+                commit({...project,apartmentSettings:{...settings,frontages}})
+              }}/>)}
+            </div>
+            <table className="mix-table"><thead><tr><th>Type</th><th>Target mix</th><th>Target area</th><th>Actual</th></tr></thead>
+              <tbody>{dwellingTypes.map(type=><tr key={type}><th scope="row"><label className="dwelling-colour">
+                <input type="color" aria-label={type+' apartment colour'} value={settings.colours?.[type]??ndss[type].colour}
+                  onChange={e=>commit({...project,apartmentSettings:{...settings,colours:{...settings.colours,[type]:e.target.value}}})}/>{type}
+              </label></th>
+                <td><NumberField label={type+' mix'} value={settings.mix[type]} min={0} max={100} unit="%" update={value=>commit({...project,apartmentSettings:{...settings,mix:{...settings.mix,[type]:value}}})}/></td>
+                <td><NumberField label={type+' target'} value={areaTarget(type,project)} min={ndss[type].areas[0]} step={.1} unit="m²" update={value=>{
+                  if(type==='3B5P'||type==='3B6P'){
+                    const targets={...project.targets,[type]:value}
+                    if(project.blocks.every(b=>footprintSatisfies(b,targets)))commit({...project,targets})
+                    else setNotice('That target creates overlapping house footprints.')
+                  }else commit({...project,apartmentSettings:{...settings,targets:{...settings.targets,[type]:value}}})
+                }}/></td><td>{totals.mix[type]}{totals.houses+totals.generatedApartments>0&&<small> {format(100*totals.mix[type]/(totals.houses+totals.generatedApartments),0)}%</small>}</td></tr>)}</tbody>
+            </table>
+            <p className="summary-note">Actual mix counts houses and subdivided apartments. Mix edits apply to new subdivisions. Apply them to existing blocks when ready.</p>
+            <button type="button" className="secondary" disabled={!totals.generatedApartments} onClick={()=>commit({...project,blocks:project.blocks.map(b=>b.apartmentLayout?{...b,apartmentLayout:{...b.apartmentLayout,mix:{...settings.mix}}}:b)})}>Apply target mix to all subdivisions</button>
+            <p className="summary-note">{ndssVersion}. Area and route checks are indicative. Room dimensions and storage are pending.</p>
+          </div>
+        </Panel>
         <Panel title="Site statistics" icon="chart" initial={false}>
           <dl className="statistics">
             <div><dt>Site area</dt><dd>{format(totals.site)} m² · {format(totals.site/10000,2)} ha</dd></div>
             <div><dt>External floor area</dt><dd>{format(totals.gross)} m²</dd></div>
             <div><dt>Building footprint</dt><dd>{format(totals.footprint)} m²</dd></div>
             <div><dt>Site coverage</dt><dd>{format(totals.coverage,1)}%</dd></div>
+            {totals.generatedApartments>0&&<>
+              <div><dt>Apartments meeting NDSS area</dt><dd>{totals.generatedApartments}</dd></div>
+              <div><dt>Apartments meeting target area</dt><dd>{totals.targetAchieving}</dd></div>
+              <div><dt>Apartment area below target</dt><dd>{totals.generatedApartments-totals.targetAchieving} homes</dd></div>
+              <div><dt>Usable apartment area</dt><dd>{format(totals.generatedUsable)} m²</dd></div>
+              <div><dt>Apartment core area</dt><dd>{format(totals.coreArea)} m²</dd></div>
+              <div><dt>Clear apartment corridor area</dt><dd>{format(totals.corridorArea)} m²</dd></div>
+            </>}
             <div><dt>Usable house area</dt><dd>{format(totals.usable)} m²</dd></div>
           </dl>
           <p className="method">Indicative GIA measures inside external walls and includes internal partitions. External floor area uses the outside footprint.</p>

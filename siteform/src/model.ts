@@ -1,9 +1,11 @@
+import {apartmentLayout,type ApartmentOptions,type ApartmentSettings} from './apartment.ts'
+import {dwellingTypes,type DwellingType} from './ndss.ts'
 export type Point = [number, number]
 export type HouseType = '3B5P' | '3B6P'
 export type BlockType = 'house' | 'apartment' | 'office' | 'pbsa'
-export type Block = {id:string; name:string; type:BlockType; line:Point[]; depth:number; floors:number; ground:number; upper:number; level:number; houseType:HouseType; setbacks?:Point[]}
+export type Block = {id:string; name:string; type:BlockType; line:Point[]; depth:number; floors:number; ground:number; upper:number; level:number; houseType:HouseType; setbacks?:Point[]; apartmentLayout?:ApartmentOptions}
 export const defaultApartmentAreaPerHome=80
-export type Project = {apartmentAreaPerHome?:number; anchor?:{lat:number;lon:number}; boundary:Point[]; blocks:Block[]; targets:Record<HouseType,number>; colours:Record<HouseType,string>}
+export type Project = {apartmentAreaPerHome?:number; apartmentSettings?:ApartmentSettings; anchor?:{lat:number;lon:number}; boundary:Point[]; blocks:Block[]; targets:Record<HouseType,number>; colours:Record<HouseType,string>}
 export const defaults = { frontage:4.5, external:0.6, party:0.3, houseFloors:3, houseHeight:3 }
 export const blockTypes:Record<BlockType,{label:string;legend:string;depth:number;ground:number;upper:number;floors:number}>={
   house:{label:'House run',legend:'Houses',depth:0,ground:defaults.houseHeight,upper:defaults.houseHeight,floors:defaults.houseFloors},
@@ -190,17 +192,39 @@ export function blockStats(b:Block,p:Project) {
 export function development(p:Project) {
   const site=area(p.boundary)
   const giaByUse:Record<BlockType,number|null>={house:0,apartment:0,office:0,pbsa:0}
+  const mix=Object.fromEntries(dwellingTypes.map(type=>[type,0])) as Record<DwellingType,number>
+  let generatedApartments=0,estimatedGia:number|null=0
+  let targetAchieving=0,generatedUsable=0,coreArea=0,corridorArea=0
   const totals=p.blocks.reduce((total,b)=>{
     const s=blockStats(b,p)
+    if(b.type==='house')mix[b.houseType]+=s.houses
+    if(b.type==='apartment'){
+      const layout=apartmentLayout(b,p)
+      if(layout?.ok){
+        layout.floors.forEach(f=>{
+          coreArea+=f.coreArea
+          corridorArea+=f.corridorArea
+          f.units.forEach(unit=>{
+            generatedApartments++
+            mix[unit.type]++
+            generatedUsable+=unit.area
+            if(unit.area+1e-7>=unit.target)targetAchieving++
+          })
+        })
+      }else{
+        estimatedGia=estimatedGia===null||s.gia===null?null:estimatedGia+s.gia
+      }
+    }
     const useGia=giaByUse[b.type]
     giaByUse[b.type]=useGia===null||s.gia===null?null:useGia+s.gia
     return {gross:total.gross+s.gross,gia:total.gia===null||s.gia===null?null:total.gia+s.gia,footprint:total.footprint+s.footprint,houses:total.houses+s.houses,usable:total.usable+s.usable}
   },{gross:0,gia:0 as number|null,footprint:0,houses:0,usable:0})
   const savedArea=p.apartmentAreaPerHome
   const apartmentAreaPerHome=savedArea!==undefined&&Number.isFinite(savedArea)&&savedArea>=1?savedArea:defaultApartmentAreaPerHome
-  const apartments=giaByUse.apartment===null?null:Math.floor(giaByUse.apartment/apartmentAreaPerHome)
+  const estimatedApartments=estimatedGia===null?null:Math.floor(estimatedGia/apartmentAreaPerHome)
+  const apartments=estimatedApartments===null?null:generatedApartments+estimatedApartments
   const homes=apartments===null?null:totals.houses+apartments
-  return {...totals,giaByUse,apartmentAreaPerHome,apartments,homes,site,
+  return {...totals,giaByUse,apartmentAreaPerHome,estimatedApartments,generatedApartments,apartments,homes,site,mix,targetAchieving,generatedUsable,coreArea,corridorArea,
     density:homes===null?null:site?homes*10000/site:0,coverage:site?totals.footprint/site*100:0}
 }
 export function newBlock(project:Project,type:Block['type'],line:Point[]):Block {
