@@ -283,12 +283,13 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         corridorStations:[frame.stationAt(left,corridorCentre),frame.stationAt(right,corridorCentre)],
         corridorJunctions:[frame.worldPoint(left,corridorEdge),frame.worldPoint(right,corridorEdge)]}
     }
-    const typical=ranges.flatMap(({zone,eligible}):ApartmentBayUnit[]=>{
+    function allocateRange(zone:Span,eligible:Bay[]):ApartmentBayUnit[]{
       if(!bends.length)return allocate(zone,eligible[0],project,settings).flatMap(unit=>eligible.map(bay=>({...unit,bay})))
       const wing=segment((zone[0]+zone[1])/2),frame=wingFrame(wing)
       return eligible.flatMap(bay=>allocate(frame.rectangularRun(zone,bay.y),bay,project,settings)
         .map(unit=>bentUnit(unit,wing,unit.x)))
-    })
+    }
+    const typical=ranges.map(({zone,eligible})=>allocateRange(zone,eligible))
     const available=ranges.flatMap(({zone,eligible})=>eligible.map(bay=>({
       x:[...zone] as Span,bay,areaPerMetre:bends.length?area(polygon(zone,bay.y))/(zone[1]-zone[0]):clearBay
     }))).reverse()
@@ -306,23 +307,36 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       }
     }
     const floors=spans.map((limits,floor):ApartmentFloor=>{
-      const fitting=typical.flatMap((original,index)=>{
-        let unit=original
-        const margin=bends.length?0:defaults.party/2
-        if(unit.x[0]-margin<limits[0]-eps||unit.x[1]+margin>limits[1]+eps){
-          if(!unit.run||unit.wing===undefined)return []
-          const wing=unit.wing
-          const [left,right]=wingFrame(wing).rectangularRun([
-            Math.max(limits[0],stations[wing]),Math.min(limits[1],stations[wing+1])
-          ],unit.bay.y)
-          const run:Span=[Math.max(unit.run[0],left+defaults.party/2),Math.min(unit.run[1],right-defaults.party/2)]
-          const frontage=settings.frontages[ndss[unit.type].beds-1]-defaults.party
-          if(run[1]-run[0]<frontage-eps)return []
-          unit=bentUnit(unit,wing,run)
-          if(unit.area<unit.minimum-eps)return []
-        }
-        if(floor===0&&uses.some(use=>use.bay===unit.bay&&use.x[1]>unit.x[0]-margin+eps&&use.x[0]<unit.x[1]+margin-eps))return []
-        return [{unit,index}]
+      const fitting=typical.flatMap((row,rowIndex)=>{
+        const retained=row.flatMap((original,index)=>{
+          let unit=original
+          const margin=bends.length?0:defaults.party/2
+          if(unit.x[0]-margin<limits[0]-eps||unit.x[1]+margin>limits[1]+eps){
+            if(!unit.run||unit.wing===undefined)return []
+            const wing=unit.wing
+            const [left,right]=wingFrame(wing).rectangularRun([
+              Math.max(limits[0],stations[wing]),Math.min(limits[1],stations[wing+1])
+            ],unit.bay.y)
+            const run:Span=[Math.max(unit.run[0],left+defaults.party/2),Math.min(unit.run[1],right-defaults.party/2)]
+            const frontage=settings.frontages[ndss[unit.type].beds-1]-defaults.party
+            if(run[1]-run[0]<frontage-eps)return []
+            unit=bentUnit(unit,wing,run)
+            if(unit.area<unit.minimum-eps)return []
+          }
+          if(floor===0&&uses.some(use=>use.bay===unit.bay&&use.x[1]>unit.x[0]-margin+eps&&use.x[0]<unit.x[1]+margin-eps))return []
+          return [{unit,index:`${rowIndex}:${index}`}]
+        })
+
+        const {zone,eligible}=ranges[rowIndex]
+        const remaining:Span=[Math.max(zone[0],limits[0]),Math.min(zone[1],limits[1])]
+        // Re-pack only the bay cut by an upper setback, and only if it gains
+        // usable area while keeping at least as many qualifying apartments.
+        if(!bends.length||!floor||remaining[1]-remaining[0]<=eps||
+          remaining[0]<=zone[0]+eps&&remaining[1]>=zone[1]-eps)return retained
+        const rebuilt=allocateRange(remaining,eligible)
+        const used=retained.reduce((sum,{unit})=>sum+unit.area,0)
+        if(rebuilt.length<retained.length||rebuilt.reduce((sum,unit)=>sum+unit.area,0)<=used+1)return retained
+        return rebuilt.map((unit,index)=>({unit,index:`${rowIndex}:setback:${index}`}))
       })
       const units=fitting.map(({unit,index})=>({id:`${block.id}:${floor}:${index}`,type:unit.type,
         outline:unit.outline??polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))

@@ -170,7 +170,9 @@ test('multiple bends retain both corner cores and the corridor through upper set
   assert.deepEqual(answer.floors[1].cores,answer.floors[0].cores)
   assert.ok(answer.floors[1].corridorArea<answer.floors[0].corridorArea)
   assert.ok(answer.floors[0].travelRoutes.some(route=>route.betweenCores))
-  assert.ok(answer.floors[1].units.every(unit=>answer.floors[0].units.some(ground=>JSON.stringify(ground.outline)===JSON.stringify(unit.outline))))
+  const middleWing=answer.floors[0].units.filter(unit=>unit.outline.every(([,y])=>y>18&&y<42))
+  assert.ok(middleWing.length>0)
+  assert.ok(middleWing.every(unit=>answer.floors[1].units.some(upper=>JSON.stringify(upper.outline)===JSON.stringify(unit.outline))))
 })
 
 test('party walls are perpendicular to the local façade on both sides of an oblique bend',()=>{
@@ -217,7 +219,9 @@ test('tall L with setbacks keeps cores square, aligned and within travel limits'
   const ground=result.floors[0]
   assert.equal(ground.cores.length,4)
   assert.ok(ground.units.length>=19)
-  assert.ok(result.floors[2].units.length>=10)
+  assert.ok(result.floors[2].units.length>=11)
+  assert.ok(result.floors[2].units.reduce((sum,unit)=>sum+unit.area,0)>740)
+  assert.deepEqual(result.floors[2].units.map(({outline})=>outline),result.floors[3].units.map(({outline})=>outline))
   assert.ok(ground.cores.some(core=>Math.abs(area(core)-70)<1e-7))
   for(const floor of result.floors){
     assert.deepEqual(floor.cores,ground.cores)
