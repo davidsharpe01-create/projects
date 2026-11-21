@@ -181,11 +181,14 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       const storeys=levels(b,project.houseHeights)
       storeys.forEach((top,i)=>{
         const elevation=b.level+top
+        const last=i===storeys.length-1
         const slab={...material,roof:white.roof,
           line:i===Math.min(floor,storeys.length-1)?editingBlue:white.line}
-        const plates=b.type==='house'?polys:polys.slice(0,1).map(poly=>floorOutline(b,poly,i))
-        plates.forEach(poly=>face(poly,elevation,slab,[],b.id,elevation-.24,i,true,false,[],undefined,undefined,false,
-          validLayout?.floors[i],i===Math.min(floor,storeys.length-1)))
+        if(!polys[0])return
+        const plate=floorOutline(b,polys[0],i)
+        face(plate,elevation,slab,[],b.id,elevation-.24,i,true,last,[],undefined,undefined,false,
+          validLayout?.floors[i],i===Math.min(floor,storeys.length-1))
+        if(last)group=plate
       })
     }else if(b.type!=='house'&&polys[0]){
       const heights=levels(b)
@@ -209,7 +212,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     }else{
       polys.forEach(poly=>face(poly,z,material,levels(b,project.houseHeights),b.id,plan?0:b.level))
     }
-    if(!stack&&group.length&&(b.id===selected||(plan&&layers.labels))){
+    if(group.length&&(b.id===selected||(plan&&layers.labels))){
       let center=group.reduce(([x,y],p)=>[x+p[0]/group.length,y+p[1]/group.length] as Point,[0,0] as Point)
       if(!plan&&editFrontage&&b.id===selected&&b.type!=='house'){
         if(!inside(center,group)){
