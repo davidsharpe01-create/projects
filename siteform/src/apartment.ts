@@ -12,7 +12,8 @@ type Span=[number,number]
 type Bay={y:Span;side:'front'|'rear'}
 type Unit={id:string;type:DwellingType;outline:Point[];area:number;minimum:number;target:number}
 type LocalUnit={x:Span;bay:Bay;type:DwellingType;area:number;minimum:number;target:number}
-export type ApartmentFloor={units:Unit[];cores:Point[][];corridor:Point[];uses:{kind:'commercial'|'communal';outline:Point[]}[];coreArea:number;corridorArea:number;travel:number;betweenCores:number}
+type TravelRoute={points:Point[];distance:number;betweenCores:boolean}
+export type ApartmentFloor={units:Unit[];cores:Point[][];corridor:Point[];uses:{kind:'commercial'|'communal';outline:Point[]}[];coreArea:number;corridorArea:number;travel:number;betweenCores:number;travelRoutes:TravelRoute[]}
 type Layout={ok:true;floors:ApartmentFloor[];hrb:boolean;topStoreyHeight:number}
 export type ApartmentResult=Layout|{ok:false;reason:string;floor?:number}
 type Inputs=Pick<Project,'targets'|'apartmentSettings'>
@@ -124,8 +125,13 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       previousEnd=left+width
       return [left,previousEnd]
     })
-    const betweenCores=cores.slice(1).reduce((distance,core,i)=>Math.max(distance,core[0]-cores[i][1]),0)
     const corridorCentre=(corridorY[0]+corridorY[1])/2
+    const coreEdgeY=config.coreSide==='front'?corridorY[0]:corridorY[1]
+    const coreRoutes=cores.slice(1).map(([left],i):TravelRoute=>({
+      points:[point(cores[i][1],corridorCentre),point(left,corridorCentre)],
+      distance:left-cores[i][1],betweenCores:true
+    })).filter(route=>route.distance>eps)
+    const betweenCores=Math.max(0,...coreRoutes.map(route=>route.distance))
     const zones:Span[]=[]
     let x=lo
     for(const core of cores){zones.push([x,core[0]],core);x=core[1]}
@@ -153,17 +159,24 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         (floor>0||!uses.some(use=>use.bay===unit.bay&&use.x[1]>unit.x[0]-defaults.party/2+eps&&use.x[0]<unit.x[1]+defaults.party/2-eps)))
       const units=fitting.map(({unit,index})=>({id:`${block.id}:${floor}:${index}`,type:unit.type,
         outline:polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))
-      const travel=fitting.reduce((distance,{unit})=>{
+      const endRoutes:(TravelRoute|undefined)[]=[]
+      for(const {unit} of fitting){
         const x=(unit.x[0]+unit.x[1])/2
-        const outside=Math.max(cores[0][0]-x,x-cores.at(-1)![1])
-        if(outside<=0&&cores.length>1)return distance
+        const left=cores[0][0],right=cores.at(-1)![1]
+        if(x>=left&&x<=right&&cores.length>1)continue
+        const coreX=Math.min(right,Math.max(left,x))
         const centre=(unit.bay.y[0]+unit.bay.y[1])/2
-        const toCorridor=Math.abs(centre-corridorCentre)
-        return Math.max(distance,Math.max(0,outside)+toCorridor+settings.corridor/2)
-      },0)
+        const distance=Math.abs(x-coreX)+Math.abs(centre-corridorCentre)+Math.abs(corridorCentre-coreEdgeY)
+        const side=x<=left?0:x>=right?1:2
+        if(distance<=(endRoutes[side]?.distance??0))continue
+        endRoutes[side]={points:[point(x,centre),point(x,corridorCentre),point(coreX,corridorCentre),point(coreX,coreEdgeY)],
+          distance,betweenCores:false}
+      }
+      const apartmentRoutes=endRoutes.filter(route=>route!==undefined)
+      const travel=Math.max(0,...apartmentRoutes.map(route=>route.distance))
       return {units,cores:cores.map(core=>polygon(core,coreY)),corridor:polygon(limits,corridorY),
         uses:floor?[]:uses.map(use=>({kind:use.kind,outline:polygon(use.x,use.bay.y)})),
-        coreArea:totalCoreArea,corridorArea:(limits[1]-limits[0])*settings.corridor,travel,betweenCores}
+        coreArea:totalCoreArea,corridorArea:(limits[1]-limits[0])*settings.corridor,travel,betweenCores,travelRoutes:[...apartmentRoutes,...coreRoutes]}
     })
     if(!floors.some(f=>f.units.length))return {ok:false,reason:'The core and corridor leave too little frontage or area for an apartment.'}
     return {ok:true,floors,hrb,topStoreyHeight}

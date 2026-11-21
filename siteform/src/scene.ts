@@ -7,8 +7,8 @@ import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface 
 import { footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
-export type Layers = {context:boolean; streets:boolean; hrb:boolean; grid:boolean; labels:boolean}
-export const initialLayers:Layers={context:true,streets:true,hrb:true,grid:false,labels:true}
+export type Layers = {context:boolean; streets:boolean; hrb:boolean; travel:boolean; grid:boolean; labels:boolean}
+export const initialLayers:Layers={context:true,streets:true,hrb:true,travel:true,grid:false,labels:true}
 export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const angle=plan?0:c.angle
   const s=Math.min(w/185,h/(plan?133:108))*c.zoom
@@ -108,6 +108,32 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
           layout.cores.forEach(core=>world(core,'#b5a797','#716357',.8,true,z))
           layout.uses.forEach(use=>world(use.outline,use.kind==='commercial'?'#dec4a2':'#c8c5ad','#8c8173',.7,true,z))
           layout.units.forEach(unit=>world(unit.outline,project.apartmentSettings?.colours?.[unit.type]??ndss[unit.type].colour,'#66615b',.65,true,z))
+          if(layers.travel&&id===selected){
+            const red='#a52d28'
+            const annotations=layout.travelRoutes.map(route=>{
+              const points=route.points.map(p=>xy(p,z))
+              ctx.setLineDash(route.betweenCores?[5,3]:[])
+              path(points,undefined,red,1.8,false)
+              ctx.setLineDash([])
+              for(const [x,y] of [points[0],points.at(-1)!]){
+                ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle=red;ctx.fill()
+              }
+              let longest=0,anchor=points[0]
+              for(let i=1;i<points.length;i++){
+                const [a,b]=[points[i-1],points[i]]
+                const size=length(a,b)
+                if(size>longest){longest=size;anchor=[(a[0]+b[0])/2,(a[1]+b[1])/2]}
+              }
+              return {anchor,label:route.distance.toFixed(1)+' m'}
+            })
+            ctx.save()
+            ctx.font='600 11px system-ui';ctx.textAlign='center';ctx.textBaseline='bottom'
+            ctx.lineWidth=3;ctx.strokeStyle='#fffaf4';ctx.fillStyle=red
+            for(const {anchor:[x,y],label} of annotations){
+              ctx.strokeText(label,x,y-3);ctx.fillText(label,x,y-3)
+            }
+            ctx.restore()
+          }
         })
     }
   }

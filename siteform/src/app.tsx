@@ -517,7 +517,7 @@ function App(){
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['context','Existing buildings'],['streets','Streets'],['hrb','Higher-risk highlight'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>(id!=='context'&&id!=='streets')||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
+            {([['context','Existing buildings'],['streets','Streets'],['hrb','Higher-risk highlight'],['travel','Travel distances'],['grid','10 m grid'],['labels','Plan labels']] as const).filter(([id])=>(id!=='context'&&id!=='streets')||project.anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
               setLayers({...layers,[id]:e.target.checked})
               if(id==='context'&&!e.target.checked&&(tool==='ghost'||tool==='show'))choose('select')
             }}/>{label}</label>)}
