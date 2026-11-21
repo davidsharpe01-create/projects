@@ -107,8 +107,8 @@ test('rejects a bend where the inside edge folds back',()=>{
   assert.match(answer.reason,/bend is too tight/)
 })
 
-test('adds aligned cores when apartment centres are over the single-direction limit',()=>{
-  const block=rectangle(70)
+test('adds aligned cores when corridor junctions are over the single-direction limit',()=>{
+  const block=rectangle(84)
   const relaxed=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,nonHrbTravel:40}})
   assert.ok(relaxed.ok)
   assert.equal(relaxed.floors[0].cores.length,1)
@@ -116,32 +116,36 @@ test('adds aligned cores when apartment centres are over the single-direction li
   const answer=solveApartments(block,project)
   assert.ok(answer.ok)
   for(const floor of answer.floors){
-    assert.equal(floor.cores.length,2)
-    assert.equal(floor.coreArea,100)
+    assert.ok(floor.cores.length>1)
+    assert.equal(floor.coreArea,50*floor.cores.length)
     assert.ok(floor.travel<=30)
     assert.deepEqual(floor.cores,answer.floors[0].cores)
   }
 })
 
 test('retains the travel warning if a setback prevents another aligned core',()=>{
-  const answer=solveApartments({...rectangle(70),setbacks:[[0,0],[29,29]]},project)
+  const answer=solveApartments({...rectangle(84),setbacks:[[0,0],[36,36]]},project)
   assert.ok(answer.ok)
   assert.equal(answer.floors[0].cores.length,1)
   assert.ok(answer.floors[0].travel>30)
 })
 
-test('single-direction travel runs from apartment centre via corridor to outer core edge',()=>{
+test('single-direction travel runs from the outer core edge to the first party-wall junction',()=>{
   const answer=solveApartments(rectangle(),project)
   assert.ok(answer.ok)
   const floor=answer.floors[0]
   assert.equal(floor.cores.length,1)
   const [left,right]=floor.cores[0].slice(0,2).map(p=>p[0])
   const expected=Math.max(...floor.units.map(({outline})=>{
-    const x=(outline[0][0]+outline[2][0])/2
-    const y=(outline[0][1]+outline[2][1])/2
-    return Math.max(0,left-x,x-right)+Math.abs(y-9)+.75
+    const gap=(x:number)=>Math.max(0,left-x,x-right)
+    return Math.min(gap(outline[0][0]),gap(outline[1][0]))+1.5
   }))
   assert.ok(Math.abs(floor.travel-expected)<1e-7)
+  for(const route of floor.travelRoutes){
+    const [x,y]=route.points.at(-1)!
+    assert.ok(y===8.25||y===9.75)
+    assert.ok(floor.units.some(({outline})=>outline.some(p=>Math.abs(p[0]-x)<1e-7)))
+  }
 })
 
 test('applies the 15 m HRB limit and the 30 m edge-to-edge spacing limit',()=>{

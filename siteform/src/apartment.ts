@@ -12,7 +12,7 @@ type Span=[number,number]
 type Bay={y:Span;side:'front'|'rear'}
 type Unit={id:string;type:DwellingType;outline:Point[];area:number;minimum:number;target:number}
 type LocalUnit={x:Span;bay:Bay;type:DwellingType;area:number;minimum:number;target:number}
-type ApartmentBayUnit=LocalUnit & {outline?:Point[];corridorStation?:number;centre?:Point}
+type ApartmentBayUnit=LocalUnit & {outline?:Point[];corridorStations?:Span;corridorJunctions?:[Point,Point]}
 type TravelRoute={points:Point[];distance:number;betweenCores:boolean}
 export type ApartmentFloor={units:Unit[];cores:Point[][];corridor:Point[];uses:{kind:'commercial'|'communal';outline:Point[]}[];coreArea:number;corridorArea:number;travel:number;betweenCores:number;travelRoutes:TravelRoute[]}
 type Layout={ok:true;floors:ApartmentFloor[];hrb:boolean;topStoreyHeight:number;cornerCores:boolean}
@@ -210,12 +210,13 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         const run:Span=[Math.max(offsetAt(a,near),offsetAt(a,far)),Math.min(offsetAt(b,near),offsetAt(b,far))]
         return allocate(run,bay,project,settings).map(unit=>{
           const [left,right]=unit.x
-          const centreX=(left+right)/2,centreY=(near+far)/2
           const stationBounds:Span=[Math.min(stationAt(left,near),stationAt(left,far)),
             Math.max(stationAt(right,near),stationAt(right,far))]
+          const corridorEdge=bay.side==='front'?corridorY[0]:corridorY[1]
           return {...unit,x:stationBounds,
             outline:[worldPoint(left,near),worldPoint(right,near),worldPoint(right,far),worldPoint(left,far)],
-            corridorStation:stationAt(centreX,corridorCentre),centre:worldPoint(centreX,centreY)}
+            corridorStations:[stationAt(left,corridorCentre),stationAt(right,corridorCentre)],
+            corridorJunctions:[worldPoint(left,corridorEdge),worldPoint(right,corridorEdge)]}
         })
       })
     })
@@ -243,17 +244,20 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         outline:unit.outline??polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))
       const endRoutes:(TravelRoute|undefined)[]=[]
       for(const {unit} of fitting){
-        const x=unit.corridorStation??(unit.x[0]+unit.x[1])/2
+        const [start,end]=unit.corridorStations??unit.x
         const left=cores[0].x[0],right=cores.at(-1)!.x[1]
-        if(x>=left&&x<=right&&cores.length>1)continue
+        if(cores.length>1&&start<=right&&end>=left)continue
+        const gap=(x:number)=>Math.max(0,left-x,x-right)
+        const x=gap(start)<=gap(end)?start:end
         const coreX=Math.min(right,Math.max(left,x))
-        const centre=(unit.bay.y[0]+unit.bay.y[1])/2
         const side=x<=left?0:x>=right?1:2
         const coreSide=side===1?cores.at(-1)!.side:cores[0].side
         const edge=coreSide==='front'?corridorY[0]:corridorY[1]
+        const unitEdge=unit.bay.side==='front'?corridorY[0]:corridorY[1]
         const corridorPoints=along([Math.min(x,coreX),Math.max(x,coreX)],corridorCentre)
-        if(x>coreX)corridorPoints.reverse()
-        const points=[unit.centre??point(x,centre),...corridorPoints,point(coreX,edge)]
+        if(coreX>x)corridorPoints.reverse()
+        const junction=unit.corridorJunctions?.[x===start?0:1]??point(x,unitEdge)
+        const points=[point(coreX,edge),...corridorPoints,junction]
         const distance=routeLength(points)
         if(distance<=(endRoutes[side]?.distance??0))continue
         endRoutes[side]={points,distance,betweenCores:false}
