@@ -219,3 +219,14 @@ test('aligned upper floor edges follow an upper setback drag in both directions'
   assert.deepEqual(offsets(2),[[0,0],[2,1],[8,3],[8,4],[8,6],[10,7]])
   assert.deepEqual(offsets(5),[[0,0],[2,1],[11,3],[11,4],[11,6],[11,7]])
 })
+
+test('pulling a setback outward moves the linked floors below up to the next step',()=>{
+  const block={...newBlock(sample,'apartment',[[0,0],[50,0]]),floors:6,
+    setbacks:[[0,0],[2,1],[6,3],[6,4],[6,6],[10,7]] as [number,number][]}
+  const drag=(delta:number)=>adjustSetback(block,sample.targets,4,0,delta,.5).setbacks
+  assert.deepEqual(drag(-2),[[0,0],[2,1],[4,3],[4,4],[4,6],[10,7]])
+  assert.deepEqual(drag(-20),[[0,0],[2,1],[2,3],[2,4],[2,6],[10,7]])
+  assert.deepEqual(drag(2),[[0,0],[2,1],[6,3],[6,4],[8,6],[10,7]])
+  const top={...block,floors:5}
+  assert.deepEqual(adjustSetback(top,sample.targets,4,0,-2,.5).setbacks,drag(-2)?.slice(0,5))
+})

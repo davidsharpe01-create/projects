@@ -169,14 +169,20 @@ export function resizeStoreys(block:Block,floors:number):Block {
 }
 export function adjustSetback(block:Block,targets:Project['targets'],floor:number,end:number,delta:number,step:number):Block {
   if(block.type==='house'||floor<=0||floor>=block.floors)return block
-  const original=endInset(block,floor)[end],minimum=endInset(block,floor-1)[end]
+  const original=endInset(block,floor)[end]
+  const sharesEdge=(inset:number)=>Math.abs(inset-original)<1e-7
+  let first=floor
+  if(delta<0){
+    while(first>1&&sharesEdge(endInset(block,first-1)[end]))first--
+  }
+  const minimum=endInset(block,first-1)[end]
   const movement=Math.max(minimum-original,delta)
   if(Math.abs(movement)<1e-7)return block
   const outline=footprints(block,targets)[0]
   if(!outline)return block
   const apply=(offset:number):Block=>({...block,setbacks:levels(block).map((_,i)=>{
     const values=[...endInset(block,i)] as Point
-    if(i===floor||i>floor&&Math.abs(values[end]-original)<1e-7)values[end]=original+offset
+    if(i>=first&&sharesEdge(values[end]))values[end]=original+offset
     else if(i>floor)values[end]=Math.max(values[end],original+offset)
     return values
   })})
