@@ -242,10 +242,21 @@ test('repositioning secondary cores recovers apartment space in a tall L with se
   const result=solveApartments(block,project)
   assert.ok(result.ok&&result.hrb)
   const apartments=result.floors.flatMap(floor=>floor.units)
-  assert.ok(apartments.length>=188)
-  assert.ok(apartments.reduce((sum,unit)=>sum+unit.area,0)>11900)
+  assert.ok(apartments.length>=210)
+  assert.ok(apartments.reduce((sum,unit)=>sum+unit.area,0)>14300)
   for(const floor of result.floors){
     assert.deepEqual(floor.cores,result.floors[0].cores)
     assert.ok(floor.travel<=15&&floor.betweenCores<=30)
+    const extents=(outline:Block['line'])=>{
+      const xs=outline.map(([x])=>x),ys=outline.map(([,y])=>y)
+      return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]
+    }
+    for(const unit of floor.units){
+      const [left,top,right,bottom]=extents(unit.outline)
+      for(const core of floor.cores){
+        const [x,y,r,b]=extents(core)
+        assert.ok(right<=x+1e-7||r<=left+1e-7||bottom<=y+1e-7||b<=top+1e-7)
+      }
+    }
   }
 })
