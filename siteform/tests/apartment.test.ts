@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {solveApartments,defaultApartmentOptions,defaultApartmentSettings} from '../src/apartment.ts'
-import {area,defaults,development,newBlock,type Block} from '../src/model.ts'
+import {area,defaults,development,editGroundFrontage,newBlock,type Block} from '../src/model.ts'
 import {blankProject} from '../src/project.ts'
 
 const project=blankProject()
@@ -134,11 +134,30 @@ test('adds aligned cores when corridor junctions are over the single-direction l
   }
 })
 
-test('retains the travel warning if a setback prevents another aligned core',()=>{
+test('adds lower cores when the upper setback has room for only one core',()=>{
   const answer=solveApartments({...rectangle(84),setbacks:[[0,0],[36,36]]},project)
   assert.ok(answer.ok)
-  assert.equal(answer.floors[0].cores.length,1)
-  assert.ok(answer.floors[0].travel>30)
+  assert.equal(answer.floors[0].cores.length,3)
+  assert.ok(answer.floors.slice(1).every(floor=>floor.cores.length===1))
+  assert.ok(answer.floors.every(floor=>floor.travel<=30&&floor.betweenCores<=30))
+})
+
+test('extending a lower wing adds cores below the setback and keeps the upper core aligned',()=>{
+  const short={...rectangle(),line:[[0,0],[31,0],[31,36]] as Block['line'],floors:12,
+    setbacks:[[0,0],[0,0],[4,4]] as Block['setbacks']}
+  const before=solveApartments(short,project)
+  assert.ok(before.ok&&before.hrb)
+  assert.equal(before.floors[0].cores.length,1)
+  const extended=editGroundFrontage(short,[[-59,0],[31,0],[31,36]])
+  assert.deepEqual(extended.setbacks?.[2],[63,4])
+  const after=solveApartments(extended,project)
+  assert.ok(after.ok&&after.hrb)
+  const [ground,first,second]=after.floors
+  assert.ok(ground.cores.length>second.cores.length)
+  assert.deepEqual(ground.cores,first.cores)
+  assert.equal(second.cores.length,1)
+  assert.ok(ground.cores.some(core=>JSON.stringify(core)===JSON.stringify(second.cores[0])))
+  assert.ok(after.floors.every(floor=>floor.travel<=15&&floor.betweenCores<=30))
 })
 
 test('single-direction travel runs from the outer core edge to the first party-wall junction',()=>{
