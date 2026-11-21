@@ -16,7 +16,7 @@ function isBuildingTool(tool:Tool):tool is BlockType {
 }
 const tools:{id:Tool;icon:string;name:string}[]=[
   {id:'select',icon:'mouse',name:'Select'},{id:'boundary',icon:'boundary',name:'Boundary'},
-  {id:'house',icon:'house',name:'House run'},{id:'apartment',icon:'building',name:'Apartment'},
+  {id:'house',icon:'house',name:blockTypes.house.label},{id:'apartment',icon:'building',name:'Apartment'},
   {id:'office',icon:'office',name:'Office'},{id:'pbsa',icon:'pbsa',name:'PBSA'},
   {id:'move',icon:'move',name:'Move'},{id:'rotate',icon:'rotate',name:'Rotate'},
   {id:'measure',icon:'ruler',name:'Measure'}

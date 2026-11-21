@@ -8,7 +8,7 @@ export const defaultApartmentAreaPerHome=80
 export type Project = {apartmentAreaPerHome?:number; apartmentSettings?:ApartmentSettings; anchor?:{lat:number;lon:number}; boundary:Point[]; blocks:Block[]; targets:Record<HouseType,number>; colours:Record<HouseType,string>}
 export const defaults = { frontage:4.5, external:0.6, party:0.3, houseFloors:3, houseHeight:3 }
 export const blockTypes:Record<BlockType,{label:string;legend:string;depth:number;ground:number;upper:number;floors:number}>={
-  house:{label:'House run',legend:'Houses',depth:0,ground:defaults.houseHeight,upper:defaults.houseHeight,floors:defaults.houseFloors},
+  house:{label:'House terrace',legend:'Houses',depth:0,ground:defaults.houseHeight,upper:defaults.houseHeight,floors:defaults.houseFloors},
   apartment:{label:'Apartment block',legend:'Apartments',depth:18,ground:4.5,upper:3,floors:4},
   office:{label:'Office',legend:'Offices',depth:18,ground:4.5,upper:4,floors:4},
   pbsa:{label:'Student accommodation (PBSA)',legend:'PBSA',depth:16,ground:4.5,upper:3,floors:4}
