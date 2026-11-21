@@ -9,7 +9,7 @@ const rectangle=(span=54,depth=18):Block=>({...newBlock(project,'apartment',[[0,
 
 test('double loaded subdivision reserves core and corridor and mirrors units',()=>{
   const block=rectangle()
-  const answer=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,travel:30}})
+  const answer=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,nonHrbTravel:40}})
   assert.ok(answer.ok)
   const [ground,upper]=answer.floors
   assert.ok(ground.units.length>4)
@@ -90,25 +90,53 @@ test('unsupported frontage returns a specific reason',()=>{
   assert.match(answer.reason,/straight frontage/)
 })
 
-test('adds aligned cores when apartment entrances are over the single-direction limit',()=>{
-  const block=rectangle()
-  const relaxed=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,travel:30}})
+test('adds aligned cores when apartment centres are over the single-direction limit',()=>{
+  const block=rectangle(70)
+  const relaxed=solveApartments(block,{...project,apartmentSettings:{...defaultApartmentSettings,nonHrbTravel:40}})
   assert.ok(relaxed.ok)
   assert.equal(relaxed.floors[0].cores.length,1)
-  assert.ok(relaxed.floors[0].travel>15)
+  assert.ok(relaxed.floors[0].travel>30)
   const answer=solveApartments(block,project)
   assert.ok(answer.ok)
   for(const floor of answer.floors){
     assert.equal(floor.cores.length,2)
     assert.equal(floor.coreArea,100)
-    assert.ok(floor.travel<=15)
+    assert.ok(floor.travel<=30)
     assert.deepEqual(floor.cores,answer.floors[0].cores)
   }
 })
 
 test('retains the travel warning if a setback prevents another aligned core',()=>{
-  const answer=solveApartments({...rectangle(),setbacks:[[0,0],[21,21]]},project)
+  const answer=solveApartments({...rectangle(70),setbacks:[[0,0],[29,29]]},project)
   assert.ok(answer.ok)
   assert.equal(answer.floors[0].cores.length,1)
-  assert.ok(answer.floors[0].travel>15)
+  assert.ok(answer.floors[0].travel>30)
+})
+
+test('single-direction travel runs from apartment centre via corridor to outer core edge',()=>{
+  const answer=solveApartments(rectangle(),project)
+  assert.ok(answer.ok)
+  const floor=answer.floors[0]
+  assert.equal(floor.cores.length,1)
+  const [left,right]=floor.cores[0].slice(0,2).map(p=>p[0])
+  const expected=Math.max(...floor.units.map(({outline})=>{
+    const x=(outline[0][0]+outline[2][0])/2
+    const y=(outline[0][1]+outline[2][1])/2
+    return Math.max(0,left-x,x-right)+Math.abs(y-9)+.75
+  }))
+  assert.ok(Math.abs(floor.travel-expected)<1e-7)
+})
+
+test('applies the 15 m HRB limit and the 30 m edge-to-edge spacing limit',()=>{
+  const hrb=solveApartments({...rectangle(63),floors:7},project)
+  assert.ok(hrb.ok&&hrb.hrb)
+  assert.ok(hrb.floors[0].travel<=15)
+  const long=rectangle(100)
+  const relaxed=solveApartments(long,{...project,apartmentSettings:{...defaultApartmentSettings,betweenCoreTravel:60}})
+  const standard=solveApartments(long,project)
+  assert.ok(relaxed.ok&&standard.ok)
+  const [loose,tight]=[relaxed.floors[0],standard.floors[0]]
+  assert.ok(loose.betweenCores>30&&loose.travel<=30)
+  assert.ok(tight.cores.length>loose.cores.length)
+  assert.ok(tight.betweenCores<=30&&tight.travel<=30)
 })

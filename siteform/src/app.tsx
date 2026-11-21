@@ -106,8 +106,10 @@ function App(){
     const layout=apartmentLayout(block,project)
     if(!layout)continue
     if(!layout.ok){warnings.push(block.name+' · '+layout.reason);continue}
+    const travelLimit=layout.hrb?settings.hrbTravel:settings.nonHrbTravel
     layout.floors.forEach((layoutFloor,index)=>{
-      if(layoutFloor.travel>settings.travel+.00001)warnings.push(block.name+' · Floor '+index+' single-direction corridor route '+format(layoutFloor.travel,1)+' m exceeds '+settings.travel+' m.')
+      if(layoutFloor.travel>travelLimit+.00001)warnings.push(block.name+' · Floor '+index+' single-direction travel '+format(layoutFloor.travel,1)+' m exceeds '+travelLimit+' m.')
+      if(layoutFloor.betweenCores>settings.betweenCoreTravel+.00001)warnings.push(block.name+' · Floor '+index+' travel between cores '+format(layoutFloor.betweenCores,1)+' m exceeds '+settings.betweenCoreTravel+' m.')
     })
     if(layout.hrb){
       higherRiskBlocks.add(block.id)
@@ -657,7 +659,9 @@ function App(){
             <h3 id="apartment-types">Apartment types</h3>
             <div className="property-grid">
               <NumberField label="Clear corridor width" value={settings.corridor} min={1} step={.1} update={corridor=>commit({...project,apartmentSettings:{...settings,corridor}})}/>
-              <NumberField label="Single-direction travel limit" value={settings.travel} min={1} step={.1} update={travel=>commit({...project,apartmentSettings:{...settings,travel}})}/>
+              <NumberField label="Non-HRB travel limit" value={settings.nonHrbTravel} min={1} step={.1} update={nonHrbTravel=>commit({...project,apartmentSettings:{...settings,nonHrbTravel}})}/>
+              <NumberField label="HRB travel limit" value={settings.hrbTravel} min={1} step={.1} update={hrbTravel=>commit({...project,apartmentSettings:{...settings,hrbTravel}})}/>
+              <NumberField label="Between cores limit" value={settings.betweenCoreTravel} min={1} step={.1} update={betweenCoreTravel=>commit({...project,apartmentSettings:{...settings,betweenCoreTravel}})}/>
               {settings.frontages.map((value,i)=><NumberField key={i} label={`Min frontage · ${i+1} bed`} value={value} min={1} step={.1} update={next=>{
                 const frontages=[...settings.frontages] as typeof settings.frontages
                 frontages[i]=next

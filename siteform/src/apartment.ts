@@ -2,17 +2,17 @@ import {defaults,endInset,length,type Block,type Point,type Project} from './mod
 import {defaultMix,defaultTargets,dwellingTypes,ndss,type DwellingType} from './ndss.ts'
 
 export type ApartmentOptions={mode:'single'|'double';coreSide:'front'|'rear';hrbCores:1|2;mix?:Record<DwellingType,number>;commercial?:number;communal?:number;corePosition?:number}
-export type ApartmentSettings={corridor:number;travel:number;frontages:[number,number,number];
+export type ApartmentSettings={corridor:number;nonHrbTravel:number;hrbTravel:number;betweenCoreTravel:number;frontages:[number,number,number];
   targets:Partial<Record<DwellingType,number>>;colours?:Partial<Record<DwellingType,string>>;mix:Record<DwellingType,number>}
 export const defaultApartmentOptions:ApartmentOptions={mode:'double',coreSide:'front',hrbCores:1}
-export const defaultApartmentSettings:ApartmentSettings={corridor:1.5,travel:15,frontages:[5.5,7,9],targets:{},mix:defaultMix}
+export const defaultApartmentSettings:ApartmentSettings={corridor:1.5,nonHrbTravel:30,hrbTravel:15,betweenCoreTravel:30,frontages:[5.5,7,9],targets:{},mix:defaultMix}
 const corridorWall=.3
 const eps=1e-7
 type Span=[number,number]
 type Bay={y:Span;side:'front'|'rear'}
 type Unit={id:string;type:DwellingType;outline:Point[];area:number;minimum:number;target:number}
 type LocalUnit={x:Span;bay:Bay;type:DwellingType;area:number;minimum:number;target:number}
-export type ApartmentFloor={units:Unit[];cores:Point[][];corridor:Point[];uses:{kind:'commercial'|'communal';outline:Point[]}[];coreArea:number;corridorArea:number;travel:number}
+export type ApartmentFloor={units:Unit[];cores:Point[][];corridor:Point[];uses:{kind:'commercial'|'communal';outline:Point[]}[];coreArea:number;corridorArea:number;travel:number;betweenCores:number}
 type Layout={ok:true;floors:ApartmentFloor[];hrb:boolean;topStoreyHeight:number}
 export type ApartmentResult=Layout|{ok:false;reason:string;floor?:number}
 type Inputs=Pick<Project,'targets'|'apartmentSettings'>
@@ -124,8 +124,8 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       previousEnd=left+width
       return [left,previousEnd]
     })
-    const firstExit=(cores[0][0]+cores[0][1])/2
-    const lastExit=(cores.at(-1)![0]+cores.at(-1)![1])/2
+    const betweenCores=cores.slice(1).reduce((distance,core,i)=>Math.max(distance,core[0]-cores[i][1]),0)
+    const corridorCentre=(corridorY[0]+corridorY[1])/2
     const zones:Span[]=[]
     let x=lo
     for(const core of cores){zones.push([x,core[0]],core);x=core[1]}
@@ -154,13 +154,16 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       const units=fitting.map(({unit,index})=>({id:`${block.id}:${floor}:${index}`,type:unit.type,
         outline:polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))
       const travel=fitting.reduce((distance,{unit})=>{
-        const entrance=(unit.x[0]+unit.x[1])/2
-        // Between two core entrances the corridor offers a choice of direction.
-        return Math.max(distance,firstExit-entrance,entrance-lastExit)
+        const x=(unit.x[0]+unit.x[1])/2
+        const outside=Math.max(cores[0][0]-x,x-cores.at(-1)![1])
+        if(outside<=0&&cores.length>1)return distance
+        const centre=(unit.bay.y[0]+unit.bay.y[1])/2
+        const toCorridor=Math.abs(centre-corridorCentre)
+        return Math.max(distance,Math.max(0,outside)+toCorridor+settings.corridor/2)
       },0)
       return {units,cores:cores.map(core=>polygon(core,coreY)),corridor:polygon(limits,corridorY),
         uses:floor?[]:uses.map(use=>({kind:use.kind,outline:polygon(use.x,use.bay.y)})),
-        coreArea:totalCoreArea,corridorArea:(limits[1]-limits[0])*settings.corridor,travel}
+        coreArea:totalCoreArea,corridorArea:(limits[1]-limits[0])*settings.corridor,travel,betweenCores}
     })
     if(!floors.some(f=>f.units.length))return {ok:false,reason:'The core and corridor leave too little frontage or area for an apartment.'}
     return {ok:true,floors,hrb,topStoreyHeight}
@@ -169,9 +172,11 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     const minimum=hrb?config.hrbCores:1
     const initial=generate(hrb,minimum)
     if(!initial.ok)return initial
-    const longest=(layout:Layout)=>Math.max(...layout.floors.map(f=>f.travel))
+    const travelLimit=hrb?settings.hrbTravel:settings.nonHrbTravel
+    const longest=(layout:Layout)=>Math.max(...layout.floors.map(f=>
+      Math.max(f.travel/travelLimit,f.betweenCores/settings.betweenCoreTravel)))
     let best=initial
-    for(let count=minimum+1;longest(best)>settings.travel+eps;count++){
+    for(let count=minimum+1;longest(best)>1+eps;count++){
       const candidate=generate(hrb,count)
       if(!candidate.ok)break
       if(hrb&&candidate.floors.reduce((count,f)=>count+f.units.length,0)<2)continue
