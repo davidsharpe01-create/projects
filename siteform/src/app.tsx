@@ -296,7 +296,7 @@ function App(){
     if(d.action==='orbit'){
       const pivot:Point=[canvas.current!.clientWidth/2,canvas.current!.clientHeight/2]
       const anchor=geometry(d.camera).invert(pivot)
-      const next={...d.camera,angle:d.camera.angle+offset[0]*.008,tilt:Math.min(.94,Math.max(.24,d.camera.tilt+offset[1]*.005))}
+      const next={...d.camera,angle:d.camera.angle+offset[0]*.004,tilt:Math.min(.94,Math.max(.24,d.camera.tilt+offset[1]*.0025))}
       const [dx,dy]=pointDiff(pivot,geometry(next).project(anchor))
       setCamera({...next,pan:[next.pan[0]+dx,next.pan[1]+dy]})
     }
