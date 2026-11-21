@@ -5,7 +5,7 @@ import type {SnapGuide} from './snap'
 import type {AerialTile} from './aerial'
 import {roadWidths,type ContextData} from './context'
 import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface } from './depth'
-import { blockTypes, footprints, levels, height, floors, floorOutline, endInset, inside, area, length, type Point, type Project } from './model'
+import { blockTypes, footprints, levels, height, floors, floorOutline, endDirection, endInset, inside, area, length, type Point, type Project } from './model'
 const coreFill='#b8babc'
 const editingBlue='#235b88'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
@@ -26,6 +26,29 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   return {project,invert,s,depth}
 }
 export type LegendEntry={label:string;colour:string;outline?:boolean}
+type SetbackEdge = {origin:Point; inward:Point}
+
+function exposedRoute(points:Point[],edges:SetbackEdge[]):Point[][] {
+  if(!edges.length)return [points]
+  return edges.flatMap(({origin,inward})=>{
+    const offset=([x,y]:Point)=>(x-origin[0])*inward[0]+(y-origin[1])*inward[1]
+    const portions:Point[][]=[]
+    let current:Point[]|undefined
+    for(let i=1;i<points.length;i++){
+      const a=points[i-1],b=points[i],da=offset(a),db=offset(b)
+      if(da>=0&&db>=0){current=undefined;continue}
+      const crossing=():Point=>{
+        const t=da/(da-db)
+        return [a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])]
+      }
+      if(!current){current=[da<=0?a:crossing()];portions.push(current)}
+      current.push(db<=0?b:crossing())
+      if(db>=0)current=undefined
+    }
+    return portions
+  })
+}
+
 type Scene = {showApartments:boolean; camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; drawBuilding:boolean; editBoundary:boolean; drafting?:boolean; context:ContextData; aerial:AerialTile[]; ghosted:ReadonlySet<number>}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
@@ -93,7 +116,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     office:['#f0f5fb','#e0e9f3','#d6e2ee','#e6eef7','#ebf2f9'],
     pbsa:['#f6f1fa','#eae1f1','#e0d6e9','#eee7f4','#f3edf7']
   }
-  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true,holes:Point[][]=[],triangles?:Point[][],contextIndex?:number,outlineOnly=false,layout?:ApartmentFloor,showTravel=false,wallOpacity?:number,showLayout=true)=>{
+  const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true,holes:Point[][]=[],triangles?:Point[][],contextIndex?:number,outlineOnly=false,layout?:ApartmentFloor,showTravel=false,wallOpacity?:number,showLayout=true,setbackEdges:SetbackEdge[]=[])=>{
     const top=poly.map(p=>xy(p,z))
     if(!plan&&z>base){
       const winding=poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+p[0]*q[1]-p[1]*q[0]},0)
@@ -139,22 +162,28 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
           }
           if(layers.travel&&showTravel&&id===selected){
             const red='#a52d28'
-            layout.travelRoutes.forEach(route=>key('Travel distance',red,route.points,z,true))
-            const annotations=layout.travelRoutes.map(route=>{
-              const points=route.points.map(p=>xy(p,z))
-              ctx.setLineDash(route.betweenCores?[5,3]:[])
-              path(points,undefined,red,1.8,false)
-              ctx.setLineDash([])
-              for(const [x,y] of [points[0],points.at(-1)!]){
-                ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle=red;ctx.fill()
+            const annotations=layout.travelRoutes.flatMap(route=>{
+              const portions=exposedRoute(route.points,setbackEdges)
+              if(!portions.length)return []
+              let longest=0,anchor:Point=xy(portions[0][0],z)
+              for(const portion of portions){
+                key('Travel distance',red,portion,z,true)
+                const points=portion.map(p=>xy(p,z))
+                ctx.setLineDash(route.betweenCores?[5,3]:[])
+                path(points,undefined,red,1.8,false)
+                ctx.setLineDash([])
+                for(let i=1;i<points.length;i++){
+                  const [a,b]=[points[i-1],points[i]]
+                  const size=length(a,b)
+                  if(size>longest){longest=size;anchor=[(a[0]+b[0])/2,(a[1]+b[1])/2]}
+                }
+                for(const endpoint of [portion[0],portion.at(-1)!]){
+                  if(endpoint!==route.points[0]&&endpoint!==route.points.at(-1))continue
+                  const [x,y]=xy(endpoint,z)
+                  ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fillStyle=red;ctx.fill()
+                }
               }
-              let longest=0,anchor=points[0]
-              for(let i=1;i<points.length;i++){
-                const [a,b]=[points[i-1],points[i]]
-                const size=length(a,b)
-                if(size>longest){longest=size;anchor=[(a[0]+b[0])/2,(a[1]+b[1])/2]}
-              }
-              return {anchor,label:route.distance.toFixed(1)+' m'}
+              return [{anchor,label:route.distance.toFixed(1)+' m'}]
             })
             ctx.save()
             ctx.font='600 11px system-ui';ctx.textAlign='center';ctx.textBaseline='bottom'
@@ -201,6 +230,15 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     const material={...white,roof:b.type==='house'?`color-mix(in srgb, ${project.colours[b.houseType]} 24%, #fff)`:roof,walls,line:b.id===selected?editingBlue:white.line}
     const firstSurface=surfaces.length
     let group=polys.flat()
+    const setbackEdges=(i:number):SetbackEdge[]=>{
+      const above=endInset(b,i+1)
+      return endInset(b,i).flatMap((inset,end)=>{
+        if(above[end]<=inset)return []
+        const [x,y]=end?b.line.at(-1)!:b.line[0]
+        const inward=endDirection(b,end)
+        return [{origin:[x+inward[0]*above[end],y+inward[1]*above[end]],inward}]
+      })
+    }
     if(stack&&polys[0]){
       const outline=polys[0],storeys=levels(b,project.houseHeights)
       const focused=Math.min(floor,storeys.length-1)
@@ -209,7 +247,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
         const plate=floorOutline(b,outline,i)
         face(plate,b.level+top,material,[],b.id,base,i,false,false,[],undefined,undefined,false,undefined,false,.5)
         const slab={...material,roof:white.roof,line:i===focused?editingBlue:white.line}
-        face(plate,base+.025,slab,[],b.id,base+.025,i,true,false,[],undefined,undefined,false,validLayout?.floors[i],i===storeys.length-1)
+        const edges=setbackEdges(i)
+        face(plate,base+.025,slab,[],b.id,base+.025,i,true,false,[],undefined,undefined,false,validLayout?.floors[i],i===storeys.length-1||edges.length>0,undefined,true,edges)
         if(i===storeys.length-1)group=plate
       })
     }else if(b.type!=='house'&&polys[0]){
@@ -222,12 +261,12 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
         heights.forEach((top,i)=>{
           const poly=floorOutline(b,polys[0],i)
           const last=i===heights.length-1
-          const here=endInset(b,i),above=endInset(b,i+1)
-          const cap=last||here.some((dist,j)=>dist!==above[j])
+          const edges=setbackEdges(i)
+          const cap=last||edges.length>0
           const colour=i>0&&i===editFloor&&b.id===selected&&editFrontage
             ?{...material,walls:['#7fa9c0','#5b889f','#6b98ae','#91b4c6'],floor:'#dceaf0'}
             :material
-          face(poly,b.level+top,colour,[],b.id,b.level+(heights[i-1]??0),i,cap,last,[],undefined,undefined,false,last?validLayout?.floors[i]:undefined,last,undefined,false)
+          face(poly,b.level+top,colour,[],b.id,b.level+(heights[i-1]??0),i,cap,last,[],undefined,undefined,false,cap?validLayout?.floors[i]:undefined,cap,undefined,false,edges)
           if(last)group=poly
         })
       }
