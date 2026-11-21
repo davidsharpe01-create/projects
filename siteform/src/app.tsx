@@ -186,10 +186,14 @@ function App(){
   function choose(next:Tool){
     setDraft([]);setGuide(undefined);setNotice('');setTool(next);setMenu(null)
     if(next!=='select')setEditFloor(0)
-    if(next==='measure'||next==='vertices')setPlan(true)
     if(next==='boundary'||isBuildingTool(next)||next==='measure'||next==='vertices')setFloor(0)
   }
-  function switchView(next:boolean){setPlan(next);if(activeBuildingView==='massing')setFloor(next?selectedFloor:0);if(draft.length||tool==='vertices')choose('select')}
+  function switchView(next:boolean,focusFloor?:number){
+    setPlan(next)
+    if(focusFloor!==undefined)setFloor(focusFloor)
+    else if(activeBuildingView==='massing')setFloor(next?selectedFloor:0)
+    if(draft.length||tool==='vertices')choose('select')
+  }
   function setOption(next:typeof menu){setMenu(m=>m===next?null:next)}
   function updateBlock(block:Block){
     if(!footprintSatisfies(block,project.targets)){setNotice('The frontage and depth must create a valid footprint.');return false}
@@ -198,7 +202,7 @@ function App(){
   function subdivide(block:Block){
     const mode=block.depth<14?'single':'double'
     if(commit({...project,blocks:project.blocks.map(b=>b===block?{...b,apartmentLayout:{...defaultApartmentOptions,mode,mix:{...settings.mix}}}:b)})){
-      setPlan(true);setFloor(0)
+      if(!plan){setBuildingView('apartments');setFloorSpacing(0);setFloor(0)}
     }
   }
   function updateLayout(block:Block,options:Partial<ApartmentOptions>){
@@ -743,7 +747,7 @@ function App(){
             {selected.type==='apartment'&&<div className="subdivision">
               {selected.apartmentLayout?<>
                 <div className="subdivision-actions">
-                  <button type="button" className="secondary" onClick={()=>{setPlan(true);setFloor(stackView?Math.min(floor,floors(selected)-1):selectedFloor)}}>View apartment plan</button>
+                  <button type="button" className="secondary" onClick={()=>switchView(true,stackView?Math.min(floor,floors(selected)-1):selectedFloor)}>View apartment plan</button>
                   <button type="button" className="secondary" onClick={()=>updateBlock({...selected,apartmentLayout:undefined})}>Remove subdivision</button>
                 </div>
                 <p className="summary-note">{selectedUnits.length} apartments · {selectedUnits.filter(u=>u.area+1e-7>=u.target).length} meet target area</p>
