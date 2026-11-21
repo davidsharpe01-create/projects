@@ -101,6 +101,7 @@ function App(){
   const selectedLayout=selected?apartmentLayout(selected,project):undefined
   const selectedUnits=selectedLayout?.ok?selectedLayout.floors.flatMap(f=>f.units):[]
   const warnings=project.blocks.flatMap(b=>blockStats(b,project).outside?[b.name+' extends beyond the site boundary.']:[])
+  const higherRiskBlocks=new Set<string>()
   for(const block of project.blocks){
     const layout=apartmentLayout(block,project)
     if(!layout)continue
@@ -108,7 +109,10 @@ function App(){
     layout.floors.forEach((layoutFloor,index)=>{
       if(layoutFloor.travel>settings.travel+.00001)warnings.push(block.name+' · Floor '+index+' single-direction corridor route '+format(layoutFloor.travel,1)+' m exceeds '+settings.travel+' m.')
     })
-    if(layout.hrb)warnings.push(block.name+' · Indicative higher-risk building threshold met ('+block.floors+' storeys; top floor '+format(layout.topStoreyHeight,1)+' m above datum).')
+    if(layout.hrb){
+      higherRiskBlocks.add(block.id)
+      warnings.push(block.name+' · Indicative higher-risk building threshold met ('+block.floors+' storeys; top floor '+format(layout.topStoreyHeight,1)+' m above datum).')
+    }
   }
   if(totals.gia===null)warnings.push('GIA is unavailable where an internal footprint cannot be calculated.')
   if(project.boundary.length<3)warnings.unshift('Draw a site boundary to check containment.')
@@ -596,7 +600,7 @@ function App(){
           <h2 className="section-label">Buildings{project.blocks.length>0&&<span>{project.blocks.length}</span>}</h2>
           {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');setSelection(b.id);setFloor(0);setEditFloor(0)}}>
             <span className={'block-icon '+b.type}><Icon name={b.type==='apartment'?'building':b.type} size={16}/></span>
-            <span className="block-name"><strong>{b.name}</strong><small>{blockTypes[b.type].label}</small></span>
+            <span className="block-name"><strong>{b.name}</strong><small>{blockTypes[b.type].label}{higherRiskBlocks.has(b.id)?' (HRB)':''}</small></span>
             <span className="storeys">{floors(b)}F</span><Icon name="right" size={13}/>
           </button>)}
           {!project.blocks.length&&<p className="empty">Choose a building type to draw a frontage.</p>}
