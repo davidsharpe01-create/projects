@@ -231,17 +231,20 @@ export function blockStats(b:Block,p:Project) {
   const units=b.type==='house'?houseUnits(b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01),houseAreaTarget(b.houseType,houseStoreys(b),p.targets),houseStoreys(b)):null
   const outlines=units?units.map(unit=>unit.outline):footprints(b,p.targets)
   const footprint=outlines.reduce((sum,poly)=>sum+area(poly),0)
-  const floorPolys=b.type!=='house'&&outlines[0]?levels(b).map((_,i)=>floorOutline(b,outlines[0],i)):[]
-  const gross=units?footprint*floors(b):floorPolys.reduce((sum,poly)=>sum+area(poly),0)
-  const internalAreas=floorPolys.map(internalFloorArea)
-  const gia=units?units.reduce((sum,unit)=>sum+unit.internalArea,0)*floors(b):
-    internalAreas.some(a=>a===null)?null:internalAreas.reduce<number>((sum,a)=>sum+(a??0),0)
+  const floorAreas=levels(b).map((_,i)=>{
+    if(units)return {gea:footprint,gia:units.reduce((sum,unit)=>sum+unit.internalArea,0)}
+    if(!outlines[0])return {gea:0,gia:0}
+    const polygon=floorOutline(b,outlines[0],i)
+    return {gea:area(polygon),gia:internalFloorArea(polygon)}
+  })
+  const gross=floorAreas.reduce((sum,floor)=>sum+floor.gea,0)
+  const gia=floorAreas.some(floor=>floor.gia===null)?null:floorAreas.reduce((sum,floor)=>sum+(floor.gia??0),0)
   const outside=p.boundary.length>=3 && outlines.some(poly=>poly.some((a,i)=>
     !inside(a,p.boundary) || p.boundary.some((c,j)=>intersects(a,poly[(i+1)%poly.length],c,p.boundary[(j+1)%p.boundary.length]))
   ))
   const houses=b.type==='house'?outlines.length:0
   const usable=units?units.reduce((sum,unit)=>sum+unit.usableArea,0)*floors(b):0
-  return {footprint, gross, gia, houses, usable, outside}
+  return {footprint, gross, gia, houses, usable, outside, floorAreas}
 }
 export function development(p:Project) {
   const site=area(p.boundary)

@@ -8,6 +8,7 @@ import {loadAerial,mapboxToken,type AerialTile} from './aerial'
 import {loadContext,emptyContext,type ContextData} from './context'
 import {defaultAddress,isDefaultAddress,siteLocation} from './project'
 import {SiteWorkspace,saveSite,type Site} from './sites'
+import {SchedulePage} from './schedule'
 import {apartmentLayout,apartmentSettings,areaTarget,defaultApartmentOptions,type ApartmentOptions} from './apartment'
 import {dwellingTypes,ndss,ndssVersion,ndssCeiling} from './ndss'
 import './style.css'
@@ -46,6 +47,7 @@ function Panel({title,icon,children,count,initial=true}:{title:string;icon:strin
 function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=>void}){
   const [history,setHistory]=useState(()=>({past:[] as Project[],current:site.project,future:[] as Project[]}))
   const project=history.current
+  const [showSchedule,setShowSchedule]=useState(false)
   const atDefault=isDefaultAddress(project.anchor)
   const location=siteLocation(project)
   const [selection,setSelection]=useState<string|null>(()=>project.blocks[0]?.id??null)
@@ -267,6 +269,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(commit({...project,blocks:project.blocks.filter(b=>b.id!==selected.id)}))setSelection(null)
   }
   const deleteFromKeyboard=useEffectEvent((event:KeyboardEvent)=>{
+    if(showSchedule)return
     if(event.key!=='Delete'&&event.key!=='Backspace')return
     if(event.defaultPrevented||event.repeat||event.isComposing||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return
     if(!selected||drag.current||menu||(tool!=='select'&&tool!=='move'&&tool!=='rotate'))return
@@ -564,7 +567,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const scale=canvas.current?geometry().s:4
   const scaleMetres=scale*20<65?50:scale*20>150?10:20
   const shownFloor=Math.min(floor,storyCount-1)
-  return <div className="app">
+  return <>
+  <div className={showSchedule?"app schedule-hidden-model":"app"} inert={showSchedule}>
     <header className="topbar">
         <div className="editor-site">
         <Button icon="right" kind="back-to-sites" onClick={()=>{
@@ -591,6 +595,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       <div className="top-actions">
         {saveError?<button className="save" title={saveError} onClick={()=>setRetry(count=>count+1)}><Icon name="warning" size={15}/>Retry save</button>:
           <span className="save" role="status"><Icon name={saved?'check':'download'} size={15}/>{saved?'Saved to cloud':'Saving…'}</span>}
+        <Button icon="chart" kind="open-schedule" onClick={()=>{setMenu(null);setShowSchedule(true)}}>Schedule</Button>
         <div className="menu-anchor"><Button icon="download" kind="export" onClick={()=>setOption('export')}>Export<Icon name="chevron" size={13}/></Button>
           {menu==='export'&&<div className="popover export-menu"><button onClick={()=>download('csv')}>Development schedule <small>CSV</small></button><button onClick={()=>download('json')}>Project data <small>JSON</small></button></div>}
         </div>
@@ -841,24 +846,6 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
             <p className="summary-note">Three-storey area targets are shared with apartments. Two-storey terraces use their own NDSS area minimums.</p>
           </section>
         </Panel>
-        <Panel title="Site statistics" icon="chart" initial={false}>
-          <dl className="statistics">
-            <div><dt>Site area</dt><dd>{format(totals.site)} m² · {format(totals.site/10000,2)} ha</dd></div>
-            <div><dt>External floor area</dt><dd>{format(totals.gross)} m²</dd></div>
-            <div><dt>Building footprint</dt><dd>{format(totals.footprint)} m²</dd></div>
-            <div><dt>Site coverage</dt><dd>{format(totals.coverage,1)}%</dd></div>
-            {totals.generatedApartments>0&&<>
-              <div><dt>Apartments meeting NDSS area</dt><dd>{totals.generatedApartments}</dd></div>
-              <div><dt>Apartments meeting target area</dt><dd>{totals.targetAchieving}</dd></div>
-              <div><dt>Apartment area below target</dt><dd>{totals.generatedApartments-totals.targetAchieving} homes</dd></div>
-              <div><dt>Usable apartment area</dt><dd>{format(totals.generatedUsable)} m²</dd></div>
-              <div><dt>Apartment core area</dt><dd>{format(totals.coreArea)} m²</dd></div>
-              <div><dt>Clear apartment corridor area</dt><dd>{format(totals.corridorArea)} m²</dd></div>
-            </>}
-            <div><dt>Usable house area</dt><dd>{format(totals.usable)} m²</dd></div>
-          </dl>
-          <p className="method">Indicative GIA measures inside external walls and includes internal partitions. External floor area uses the outside footprint.</p>
-        </Panel>
         <Panel title="Warnings" icon="warning" count={warnings.length} initial={false}>
           <div className="warnings">{warnings.length?warnings.map(w=><p key={w}><Icon name="warning" size={14}/>{w}</p>):<p><Icon name="check" size={14}/>All blocks within the site boundary.</p>}</div>
         </Panel>
@@ -872,5 +859,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       </div></div>
     </footer>
   </div>
+  {showSchedule&&<SchedulePage name={site.name} project={project} totals={totals} onBack={()=>setShowSchedule(false)}/>}
+  </>
 }
 createRoot(document.getElementById('root')!).render(<SiteWorkspace editor={(site,close,saved)=><App key={site.id} site={site} close={close} onSaved={saved}/>}/>)
