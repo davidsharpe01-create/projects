@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
@@ -224,9 +224,22 @@ function App(){
   }
   function remove(){
     if(!selected)return
-    commit({...project,blocks:project.blocks.filter(b=>b.id!==selected.id)})
-    setSelection(null)
+    if(commit({...project,blocks:project.blocks.filter(b=>b.id!==selected.id)}))setSelection(null)
   }
+  const deleteFromKeyboard=useEffectEvent((event:KeyboardEvent)=>{
+    if(event.key!=='Delete'&&event.key!=='Backspace')return
+    if(event.defaultPrevented||event.repeat||event.isComposing||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return
+    if(!selected||drag.current||menu||(tool!=='select'&&tool!=='move'&&tool!=='rotate'))return
+    const target=event.target
+    if(target instanceof HTMLElement&&(target.isContentEditable||target.closest('input, textarea, select, [role="textbox"], [role="spinbutton"]')))return
+    event.preventDefault()
+    remove()
+  })
+  useEffect(()=>{
+    const onKeyDown=(event:KeyboardEvent)=>deleteFromKeyboard(event)
+    window.addEventListener('keydown',onKeyDown)
+    return()=>window.removeEventListener('keydown',onKeyDown)
+  },[])
   function viewPoint(event:PointerEvent):Point{
     const rect=canvas.current!.getBoundingClientRect()
     return [event.clientX-rect.left,event.clientY-rect.top]
@@ -812,7 +825,7 @@ function App(){
       <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Right-drag or middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold middle and left together to pan while editing. In Plan, middle-drag pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select its ground spline. Double-click to enter floor editing, then pick an upper floor and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Right-drag or middle-drag to orbit in 3D. Left-drag away from editing handles to pan in Select. Hold middle and left together to pan while editing. In Plan, middle-drag pans. Scroll to zoom around the cursor. Snapping follows building and boundary edges, aligns angles, and uses a 0.5 m grid elsewhere.</p><p>Left-click a building to select its ground spline. Double-click to enter floor editing, then pick an upper floor and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
