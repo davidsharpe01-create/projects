@@ -297,3 +297,18 @@ test('an asymmetric corner apartment survives a setback on the shorter wing',()=
     assert.deepEqual(floor.units.find(unit=>unit.outline.length===6)?.outline,corner.outline)
   }
 })
+
+test('a bent double-loaded block mirrors qualifying bays and keeps the end frontages residential',()=>{
+  const block={...rectangle(),line:[[0,0],[42,0],[42,42]] as Block['line']}
+  const result=solveApartments(block,project)
+  assert.ok(result.ok)
+  const ground=result.floors[0]
+  assert.equal(ground.cores.length,1)
+  const paired=ground.units.filter(unit=>unit.outline.length===4&&unit.outline.every(p=>p[1]<9)&&
+    ground.units.some(other=>other.type===unit.type&&other.outline.length===4&&other.outline.every(p=>p[1]>9)&&
+      Math.abs(unit.outline[0][0]-other.outline[0][0])<1e-7&&Math.abs(unit.outline[1][0]-other.outline[1][0])<1e-7))
+  assert.ok(paired.length>=3)
+  assert.equal(ground.units.filter(unit=>unit.outline.some(([x])=>Math.abs(x-.75)<1e-7)).length,2)
+  assert.equal(ground.units.filter(unit=>unit.outline.some(([,y])=>Math.abs(y-41.25)<1e-7)).length,2)
+  assert.ok(ground.units.every(unit=>unit.area>=unit.minimum-1e-7))
+})

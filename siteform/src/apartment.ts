@@ -15,7 +15,7 @@ type LocalUnit={x:Span;bay:Bay;type:DwellingType;area:number;minimum:number;targ
 type ApartmentBayUnit=LocalUnit & {outline?:Point[];corridorStations?:Span;corridorJunctions?:[Point,Point]}
 type TravelRoute={points:Point[];distance:number;betweenCores:boolean}
 export type ApartmentFloor={units:Unit[];cores:Point[][];corridor:Point[];uses:{kind:'commercial'|'communal';outline:Point[]}[];coreArea:number;corridorArea:number;travel:number;betweenCores:number;travelRoutes:TravelRoute[]}
-type Layout={ok:true;floors:ApartmentFloor[];hrb:boolean;topStoreyHeight:number;cornerCores:boolean}
+type Layout={ok:true;floors:ApartmentFloor[];hrb:boolean;topStoreyHeight:number;cornerCores:boolean;endHomes:number}
 export type ApartmentResult=Layout|{ok:false;reason:string;floor?:number}
 type Inputs=Pick<Project,'targets'|'apartmentSettings'>
 export const apartmentSettings=(project:Inputs)=>({...defaultApartmentSettings,...project.apartmentSettings})
@@ -197,7 +197,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       })
     }else{
       for(let i=0;i<coreCount;i++){
-        const x=lo+(hi-lo)*((i+.5)/coreCount+((config.corePosition??50)-50)/100)
+        const x=lo+(hi-lo)*((i+.5+shift)/coreCount+((config.corePosition??50)-50)/100)
         targets.push({x,side:defaultSide,corner:false})
       }
     }
@@ -374,6 +374,30 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       return wing===undefined?units:units.map(unit=>bentUnit(unit,wing,unit.x))
     }
     const typical=ranges.map(({zone,eligible,wing})=>allocateRange(zone,eligible,wing))
+    if(bends.length&&double){
+      // Use an opposite row as a partition template when the remaining
+      // frontage can still be filled without losing an apartment.
+      for(const [index,{zone,eligible:[bay],wing}] of ranges.entries()){
+        if(wing===undefined)continue
+        const original=typical[index]
+        const originalArea=original.reduce((sum,unit)=>sum+unit.area,0)
+        let mirrored=0
+        for(const [other,range] of ranges.entries()){
+          if(range.wing!==wing||range.eligible[0]===bay)continue
+          const matches=typical[other].filter(unit=>unit.x[0]-defaults.party/2>=zone[0]-eps&&unit.x[1]+defaults.party/2<=zone[1]+eps)
+          if(matches.length<=mirrored)continue
+          const left=matches[0].x[0]-defaults.party/2,right=matches.at(-1)!.x[1]+defaults.party/2
+          const candidate=[
+            ...allocateRange([zone[0],left],[bay],wing),
+            ...matches.map(unit=>bentUnit({...unit,bay},wing,unit.x)),
+            ...allocateRange([right,zone[1]],[bay],wing)
+          ]
+          if(candidate.length<original.length||candidate.reduce((sum,unit)=>sum+unit.area,0)<originalArea-defaults.party*clearBay-eps)continue
+          typical[index]=candidate
+          mirrored=matches.length
+        }
+      }
+    }
     const available=ranges.flatMap(({zone,eligible,wing})=>eligible.map(bay=>({
       x:[...zone] as Span,bay,wing,areaPerMetre:bay.y[1]-bay.y[0]
     }))).reverse()
@@ -390,6 +414,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         remaining-=amount*place.areaPerMetre
       }
     }
+    let endHomes=0
     const floors=spans.map((limits,floor):ApartmentFloor=>{
       const fitting=typical.flatMap((row,rowIndex)=>{
         const {zone,eligible,wing}=ranges[rowIndex]
@@ -417,6 +442,13 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
       }
       const units=fitting.map(({unit,index})=>({id:`${block.id}:${floor}:${index}`,type:unit.type,
         outline:unit.outline??polygon(unit.x,unit.bay.y),area:unit.area,minimum:unit.minimum,target:unit.target}))
+      const [leftInset,rightInset]=endInset(block,floor)
+      for(const [end,inset] of [leftInset,rightInset].entries()){
+        const wing=end?directions.length-1:0,[dx,dy]=directions[wing]
+        const origin=end?line.at(-1)!:line[0],direction=end?-1:1
+        endHomes+=units.filter(unit=>unit.outline.some(([x,y])=>
+          Math.abs(((x-origin[0])*dx+(y-origin[1])*dy)*direction-inset-E-defaults.party/2)<.04)).length
+      }
       const endRoutes:(TravelRoute|undefined)[]=[]
       for(const {unit} of fitting){
         const [start,end]=unit.corridorStations??unit.x
@@ -446,7 +478,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         coreArea:totalCoreArea,corridorArea:area(corridor),travel,betweenCores,travelRoutes:[...apartmentRoutes,...coreRoutes]}
     })
     if(!floors.some(f=>f.units.length))return {ok:false,reason:'The core and corridor leave too little frontage or area for an apartment.'}
-    return {ok:true,floors,hrb,topStoreyHeight,cornerCores:bends.length>0}
+    return {ok:true,floors,hrb,topStoreyHeight,cornerCores:bends.length>0,endHomes}
   }
   function routeLayout(hrb:boolean):ApartmentResult {
     const minimum=Math.max(bends.length,hrb?config.hrbCores:1)
@@ -456,7 +488,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     const longest=(layout:Layout)=>Math.max(...layout.floors.map(f=>
       Math.max(f.travel/travelLimit,f.betweenCores/settings.betweenCoreTravel)))
     if(bends.length){
-      const usable=(layout:Layout)=>layout.floors.reduce((total,floor)=>
+      const usable=(layout:Layout)=>layout.endHomes*8+layout.floors.reduce((total,floor)=>
         total+floor.units.reduce((sum,unit)=>sum+unit.area,0),0)
       let best=initial.ok?initial:undefined
       for(let count=minimum;count<=Math.min(28,minimum+Math.ceil(span/Math.min(travelLimit,settings.betweenCoreTravel)));count++){
@@ -491,6 +523,13 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
     }
     if(!initial.ok)return initial
     let best=initial
+    if(config.corePosition===undefined||config.corePosition===50){
+      for(const shift of [-.12,.12]){
+        const candidate=generate(hrb,minimum,shift)
+        if(candidate.ok&&longest(candidate)<=1+eps&&
+          (longest(best)>1+eps||candidate.endHomes>best.endHomes))best=candidate
+      }
+    }
     for(let count=minimum+1;longest(best)>1+eps;count++){
       const candidate=generate(hrb,count)
       if(!candidate.ok)break
