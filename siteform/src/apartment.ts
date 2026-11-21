@@ -4,7 +4,7 @@ import {defaultMix,defaultTargets,dwellingTypes,ndss,type DwellingType} from './
 export type ApartmentOptions={mode:'single'|'double';coreSide:'front'|'rear';hrbCores:1|2;mix?:Record<DwellingType,number>;commercial?:number;communal?:number;corePosition?:number}
 export type ApartmentSettings={corridor:number;nonHrbTravel:number;hrbTravel:number;betweenCoreTravel:number;frontages:[number,number,number];
   targets:Partial<Record<DwellingType,number>>;colours?:Partial<Record<DwellingType,string>>;mix:Record<DwellingType,number>}
-export const defaultApartmentOptions:ApartmentOptions={mode:'double',coreSide:'front',hrbCores:1}
+export const defaultApartmentOptions:ApartmentOptions={mode:'double',coreSide:'front',hrbCores:1,commercial:50,communal:50}
 export const defaultApartmentSettings:ApartmentSettings={corridor:1.5,nonHrbTravel:30,hrbTravel:15,betweenCoreTravel:30,frontages:[5.5,7,9],targets:{},mix:defaultMix}
 const corridorWall=.3
 const eps=1e-7
@@ -425,6 +425,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         remaining-=amount*place.areaPerMetre
       }
     }
+    const fullyAllocatedGround=(config.commercial??0)+(config.communal??0)>=100
     let endHomes=0
     const floors=spans.map((limits,floor):ApartmentFloor=>{
       const fitting=typical.flatMap((row,rowIndex)=>{
@@ -448,7 +449,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         })
         return retained
       })
-      if(floor>0||(config.commercial??0)+(config.communal??0)<100){
+      if(floor>0||!fullyAllocatedGround){
         fitting.push(...cornerUnits.flatMap(({unit,floors},index)=>floor<floors?[{unit,index:`corner:${index}`}]:[]))
       }
       const units=fitting.map(({unit,index})=>({id:`${block.id}:${floor}:${index}`,type:unit.type,
@@ -495,7 +496,7 @@ export function solveApartments(block:Block,project:Inputs):ApartmentResult {
         uses:floor?[]:uses.map(use=>({kind:use.kind,outline:use.wing===undefined?polygon(use.x,use.bay.y):wingFrame(use.wing).rectangle(use.x,use.bay.y)})),
         coreArea:active.reduce((sum,stack)=>sum+stack.area,0),corridorArea:area(corridor),travel,betweenCores,travelRoutes:[...apartmentRoutes,...coreRoutes]}
     })
-    if(!floors.some(f=>f.units.length))return {ok:false,reason:'The core and corridor leave too little frontage or area for an apartment.'}
+    if(!floors.some(f=>f.units.length)&&!(block.floors===1&&fullyAllocatedGround&&floors[0].uses.length))return {ok:false,reason:'The core and corridor leave too little frontage or area for an apartment.'}
     return {ok:true,floors,hrb,topStoreyHeight,cornerCores:bends.length>0,endHomes}
   }
   function routeLayout(hrb:boolean):ApartmentResult {

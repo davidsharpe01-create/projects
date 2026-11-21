@@ -5,7 +5,8 @@ import {area,defaults,development,editGroundFrontage,newBlock,type Block} from '
 import {blankProject} from '../src/project.ts'
 
 const project=blankProject()
-const rectangle=(span=54,depth=18):Block=>({...newBlock(project,'apartment',[[0,0],[span,0]]),depth,apartmentLayout:{...defaultApartmentOptions}})
+const residentialOptions={...defaultApartmentOptions,commercial:0,communal:0}
+const rectangle=(span=54,depth=18):Block=>({...newBlock(project,'apartment',[[0,0],[span,0]]),depth,apartmentLayout:{...residentialOptions}})
 
 test('double loaded subdivision reserves core and corridor and mirrors units',()=>{
   const block=rectangle()
@@ -66,16 +67,29 @@ test('higher-risk planning checks use top storey elevation and switch core allow
   assert.equal(atHeight.hrb,true)
   assert.equal(atHeight.floors[0].coreArea,120)
   assert.ok(Math.abs(area(atHeight.floors[0].cores[0])-70)<1e-7)
-  const two=solveApartments({...block,floors:7,apartmentLayout:{...defaultApartmentOptions,hrbCores:2}},project)
+  const two=solveApartments({...block,floors:7,apartmentLayout:{...residentialOptions,hrbCores:2}},project)
   assert.ok(two.ok)
   assert.equal(two.floors[0].cores.length,2)
   assert.equal(two.floors[0].coreArea,100)
 })
 
+test('new subdivisions split the available ground-floor area equally between commercial and communal',()=>{
+  for(const floors of [1,4]){
+    const result=solveApartments({...rectangle(),floors,apartmentLayout:defaultApartmentOptions},project)
+    assert.ok(result.ok)
+    const [ground,...upper]=result.floors
+    const used=(kind:string)=>ground.uses.filter(use=>use.kind===kind).reduce((sum,use)=>sum+area(use.outline),0)
+    assert.ok(used('commercial')>0)
+    assert.ok(Math.abs(used('commercial')-used('communal'))<1e-7)
+    assert.equal(ground.units.length,0)
+    assert.ok(upper.every(floor=>floor.uses.length===0&&floor.units.length>0))
+  }
+})
+
 test('mixed ground floor retains upper apartments and reports actual and estimated homes separately',()=>{
   const block=rectangle()
   const regular=solveApartments(block,project)
-  const mixed={...block,apartmentLayout:{...defaultApartmentOptions,commercial:20,communal:10}}
+  const mixed={...block,apartmentLayout:{...residentialOptions,commercial:20,communal:10}}
   const answer=solveApartments(mixed,project)
   assert.ok(regular.ok&&answer.ok)
   assert.ok(answer.floors[0].units.length<regular.floors[0].units.length)
