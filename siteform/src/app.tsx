@@ -58,12 +58,12 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const [plan,setPlan]=useState(false)
   const [floor,setFloor]=useState(0)
   const [revealedBlock,setRevealedBlock]=useState<string|null>(null)
-  const showApartments=!!selected?.apartmentLayout&&revealedBlock===selected.id
-  const stackView=!plan&&showApartments
+  const showFloorplates=!!selected&&revealedBlock===selected.id
   const [editFloor,setEditFloor]=useState(0)
   const selectedFloor=Math.min(editFloor,Math.max(0,(selected?.floors??1)-1))
   const [camera,setCamera]=useState<Camera>(home)
   const [layers,setLayers]=useState(initialLayers)
+  const stackView=!plan&&(showFloorplates||layers.floorplates)
   const [ghosted,setGhosted]=useState<Set<number>>(()=>new Set())
   useEffect(()=>setGhosted(new Set()),[project.anchor])
   const [nearby,setNearby]=useState<{anchor:Project['anchor'];data:ContextData;status:'loading'|'ready'|'unavailable'}>()
@@ -197,11 +197,11 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   },[])
   useLayoutEffect(()=>{
     if(!canvas.current)return
-    scene.current=draw(canvas.current,{showApartments,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
+    scene.current=draw(canvas.current,{showFloorplates,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
     const entries=scene.current.legend
     setLegend(previous=>previous.length===entries.length&&previous.every((item,i)=>
       item.label===entries[i].label&&item.colour===entries[i].colour&&item.outline===entries[i].outline)?previous:entries)
-  },[showApartments,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
+  },[showFloorplates,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
   function commit(next:Project,trimUpper=false){
     for(const block of next.blocks){
       const layout=apartmentLayout(block,next)
@@ -228,7 +228,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   function switchView(next:boolean,focusFloor?:number){
     setPlan(next)
     if(focusFloor!==undefined)setFloor(focusFloor)
-    else if(!showApartments)setFloor(next?selectedFloor:0)
+    else if(!showFloorplates)setFloor(next?selectedFloor:0)
     if(draft.length||tool==='vertices')choose('select')
   }
   function setOption(next:typeof menu){setMenu(m=>m===next?null:next)}
@@ -486,8 +486,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   }
   function revealBlock(id:string|null){
     setSelection(id)
-    if(!plan)setRevealedBlock(id)
-    else if(!id||id!==selection)setRevealedBlock(null)
+    setRevealedBlock(id)
   }
   function clickCanvas(e:MouseEvent<HTMLCanvasElement>){
     const screen=drawingClick.current
@@ -635,7 +634,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
           {menu==='layers'&&<div className="popover layers-menu">
             <strong>Display layers</strong>
-            {([['context','Existing buildings'],['aerial','Aerial imagery'],['streets','Street names'],['travel','Travel distances'],['grid','10 m grid']] as const).filter(([id])=>id==='aerial'?!!(anchor&&mapboxToken):id!=='context'&&id!=='streets'||!!anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
+            {([['context','Existing buildings'],['aerial','Aerial imagery'],['streets','Street names'],['travel','Travel distances'],['floorplates','All floorplates'],['grid','10 m grid']] as const).filter(([id])=>id==='aerial'?!!(anchor&&mapboxToken):id!=='context'&&id!=='streets'||!!anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
               if(id==='aerial'&&!e.target.checked)setImagery(undefined)
               setLayers({...layers,[id]:e.target.checked})
               if(id==='context'&&!e.target.checked&&(tool==='ghost'||tool==='show'))choose('select')
@@ -832,10 +831,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
             </div>
             <p className="summary-note">Heights apply to all houses. Houses and apartments allow 0.3 m for floor and ceiling construction, giving 2.3 m estimated clear height at a 2.6 m storey height.</p>
             <table className="mix-table"><thead><tr><th>Type</th><th>2-storey area</th><th>3-storey target</th><th>Actual</th></tr></thead>
-              <tbody>{(['3B5P','3B6P'] as const).map(type=><tr key={type}><th scope="row"><label className="dwelling-colour">
-                <input type="color" aria-label={type+' house colour'} value={project.colours[type]}
-                  onChange={e=>commit({...project,colours:{...project.colours,[type]:e.target.value}})}/>{type}
-              </label></th>
+              <tbody>{(['3B5P','3B6P'] as const).map(type=><tr key={type}><th scope="row">{type}</th>
                 <td>{ndss[type].areas[1]} m²</td><td><NumberField label={type+' three-storey house target area'} value={project.targets[type]} min={ndss[type].areas[2]} max={220} step={.1} unit="m²" update={value=>{
                   const targets={...project.targets,[type]:value}
                   if(project.blocks.every(b=>footprintSatisfies(b,targets)))return commit({...project,targets})

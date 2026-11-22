@@ -36,7 +36,7 @@ function Preview({project}:{project:Project}){
   return <div className="site-preview">
     {points.length?<svg aria-hidden="true" viewBox={`${left-padding} ${top-padding} ${width+padding*2} ${height+padding*2}`}>
       {project.boundary.length>=3&&<polygon points={polygon(project.boundary)} fill="#eee3d4" stroke="#ad574e" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
-      {blocks.map((outline,i)=><polygon key={i} points={polygon(outline)} fill="#c3d6cc" stroke="#60786e" strokeWidth="1" vectorEffect="non-scaling-stroke"/>)}
+      {blocks.map((outline,i)=><polygon key={i} points={polygon(outline)} fill="#fffefd" stroke="#a09f9a" strokeWidth="1" vectorEffect="non-scaling-stroke"/>)}
     </svg>:<span>Boundary to be drawn</span>}
   </div>
 }

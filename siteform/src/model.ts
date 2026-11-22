@@ -78,13 +78,20 @@ function houseUnits(line:Point[],target:number,storeys:HouseStoreys) {
       const left=j===0?defaults.external:defaults.party/2
       const right=j===count-1?defaults.external:defaults.party/2
       const internalWidth=width-(j===0?left:0)-(j===count-1?right:0)
+      const front=pointAlong(start,end,j*width+left),rear=pointAlong(start,end,(j+1)*width-right)
       return {
         outline:rectangle(pointAlong(start,end,j*width),pointAlong(start,end,(j+1)*width),depth),
+        innerOutline:rectangle(offset(front,end,defaults.external),offset(rear,start,-defaults.external),clearDepth),
         internalArea:internalWidth*clearDepth,
         usableArea:(width-left-right)*clearDepth
       }
     })
   })
+}
+export function houseFloorplates(b:Block,targets:Project['targets']){
+  const storeys=houseStoreys(b)
+  return houseUnits(b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01),houseAreaTarget(b.houseType,storeys,targets),storeys)
+    .map(({outline,innerOutline})=>({outline,innerOutline}))
 }
 export function footprints(b:Block,targets:Project['targets']):Point[][] {
   const line=b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01)
@@ -211,7 +218,7 @@ export function adjustSetback(block:Block,targets:Project['targets'],floor:numbe
   const bounded=step?Math.sign(accepted)*Math.floor(Math.abs(accepted)/step)*step:accepted
   return Math.abs(bounded)>1e-6?apply(bounded):block
 }
-function internalFloorArea(poly:Point[]) {
+export function internalFloorOutline(poly:Point[]) {
   const winding=Math.sign(signedArea(poly))
   const thickness=winding*defaults.external
   const inner=poly.map((p,i):Point=>{
@@ -225,7 +232,11 @@ function internalFloorArea(poly:Point[]) {
   })
   return validPolygon(inner)&&Math.sign(signedArea(inner))===winding&&inner.every((p,i)=>
     inside(p,poly)&&minus(inner[(i+1)%inner.length],p).reduce((sum,n,j)=>sum+n*(poly[(i+1)%poly.length][j]-poly[i][j]),0)>0
-  )?area(inner):null
+  )?inner:null
+}
+function internalFloorArea(poly:Point[]) {
+  const inner=internalFloorOutline(poly)
+  return inner?area(inner):null
 }
 export function blockStats(b:Block,p:Project) {
   const units=b.type==='house'?houseUnits(b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01),houseAreaTarget(b.houseType,houseStoreys(b),p.targets),houseStoreys(b)):null
