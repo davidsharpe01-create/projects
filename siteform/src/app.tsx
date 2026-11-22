@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, 
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, editGroundFrontage, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
-import { draw, home, initialLayers, projection, type Camera, type LegendEntry } from './scene'
+import { draw, fitCamera, home, initialLayers, projection, type Camera, type LegendEntry } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadAerial,mapboxToken,type AerialTile} from './aerial'
 import {loadContext,emptyContext,type ContextData} from './context'
@@ -50,7 +50,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const [showSchedule,setShowSchedule]=useState(false)
   const atDefault=isDefaultAddress(project.anchor)
   const location=siteLocation(project)
-  const [selection,setSelection]=useState<string|null>(()=>project.blocks[0]?.id??null)
+  const [selection,setSelection]=useState<string|null>(null)
   const selected=project.blocks.find(b=>b.id===selection)
   const [drawHouseStoreys,setDrawHouseStoreys]=useState<HouseStoreys>(3)
   const houseHeights=project.houseHeights??defaultHouseHeights
@@ -518,20 +518,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     })
   }
   function fitModel(){
-    const node=canvas.current!
-    const {clientWidth:w,clientHeight:h}=node
-    const base:Camera={...camera,zoom:1,pan:[0,0]}
-    const model=projection(w,h,base,plan)
-    const points=project.boundary.map(p=>model.project(p))
-    project.blocks.forEach(b=>footprints(b,project.targets).forEach(poly=>poly.forEach(p=>{
-      points.push(model.project(p,plan?0:b.level),model.project(p,plan?0:b.level+height(b,project.houseHeights)))
-    })))
-    if(!points.length){setCamera(home);return}
-    const xs=points.map(p=>p[0]),ys=points.map(p=>p[1])
-    const l=Math.min(...xs),r=Math.max(...xs),t=Math.min(...ys),b=Math.max(...ys)
-    const zoom=Math.min(4,(w*.81)/Math.max(1,r-l),(h*.76)/Math.max(1,b-t))
-    const [x,y]=model.project([0,0])
-    setCamera({...base,zoom,pan:[w/2-x-((l+r)/2-x)*zoom,h/2-y-((t+b)/2-y)*zoom]})
+    const {clientWidth,clientHeight}=canvas.current!
+    setCamera(fitCamera(clientWidth,clientHeight,camera,plan,project))
   }
   useEffect(()=>{
     const node=canvas.current

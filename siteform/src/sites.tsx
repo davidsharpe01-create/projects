@@ -1,6 +1,8 @@
-import {useEffect,useState,type FormEvent} from 'react'
+import {useEffect,useRef,useState,type FormEvent} from 'react'
 import {blankProject,restoreProject,siteLocation} from './project'
-import {footprints,type Project} from './model'
+import type {Project} from './model'
+import {draw,fitCamera,home} from './scene'
+import {emptyContext} from './context'
 
 export type Site={id:string;name:string;project:Project;revision:number;updatedAt:number}
 type SaveReceipt=Pick<Site,'revision'|'updatedAt'>
@@ -26,18 +28,28 @@ export function readBrowserSite():Project|undefined{
 }
 
 function Preview({project}:{project:Project}){
-  const blocks=project.blocks.flatMap(block=>footprints(block,project.targets))
-  const points=[...project.boundary,...blocks.flat()]
-  const xs=points.map(([x])=>x),ys=points.map(([,y])=>y)
-  const left=Math.min(...xs),top=Math.min(...ys)
-  const width=Math.max(1,Math.max(...xs)-left),height=Math.max(1,Math.max(...ys)-top)
-  const padding=Math.max(width,height)*.13
-  const polygon=(outline:Project['boundary'])=>outline.map(point=>point.join(',')).join(' ')
-  return <div className="site-preview">
-    {points.length?<svg aria-hidden="true" viewBox={`${left-padding} ${top-padding} ${width+padding*2} ${height+padding*2}`}>
-      {project.boundary.length>=3&&<polygon points={polygon(project.boundary)} fill="#eee3d4" stroke="#ad574e" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
-      {blocks.map((outline,i)=><polygon key={i} points={polygon(outline)} fill="#fffefd" stroke="#a09f9a" strokeWidth="1" vectorEffect="non-scaling-stroke"/>)}
-    </svg>:<span>Boundary to be drawn</span>}
+  const canvas=useRef<HTMLCanvasElement>(null)
+  const hasGeometry=project.boundary.length>=3||project.blocks.length>0
+  useEffect(()=>{
+    const node=canvas.current
+    if(!node)return
+    const render=()=>{
+      const {clientWidth:w,clientHeight:h}=node
+      if(!w||!h)return
+      draw(node,{
+        camera:fitCamera(w,h,home,false,project,Infinity),plan:false,project,selected:null,
+        showFloorplates:false,floor:0,editFloor:0,draft:[],pointer:null,
+        layers:{context:false,streets:false,aerial:false,travel:false,floorplates:false,grid:false},
+        opacity:1,editFrontage:false,drawBuilding:false,editBoundary:false,
+        drafting:true,context:emptyContext,aerial:[],ghosted:new Set()
+      })
+    }
+    const observer=new ResizeObserver(render)
+    observer.observe(node)
+    return()=>observer.disconnect()
+  },[project])
+  return <div className="site-preview" aria-hidden="true">
+    {hasGeometry?<canvas ref={canvas}/>:<span>Boundary to be drawn</span>}
   </div>
 }
 

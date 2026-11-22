@@ -25,6 +25,20 @@ export function projection(w:number,h:number,c:Camera,plan:boolean) {
   const depth=(p:Point,z=0)=>(p[0]*sn+p[1]*cs)*Math.sqrt(1-tilt*tilt)+z*tilt
   return {project,invert,s,depth}
 }
+export function fitCamera(w:number,h:number,camera:Camera,plan:boolean,project:Project,maxZoom=4):Camera {
+  const base:Camera={...camera,zoom:1,pan:[0,0]}
+  const model=projection(w,h,base,plan)
+  const points=project.boundary.map(p=>model.project(p))
+  project.blocks.forEach(b=>footprints(b,project.targets).forEach(poly=>poly.forEach(p=>{
+    points.push(model.project(p,plan?0:b.level),model.project(p,plan?0:b.level+height(b,project.houseHeights)))
+  })))
+  if(!points.length)return base
+  const xs=points.map(p=>p[0]),ys=points.map(p=>p[1])
+  const l=Math.min(...xs),r=Math.max(...xs),t=Math.min(...ys),b=Math.max(...ys)
+  const zoom=Math.min(maxZoom,(w*.81)/Math.max(1,r-l),(h*.76)/Math.max(1,b-t))
+  const [x,y]=model.project([0,0])
+  return {...base,zoom,pan:[w/2-x-((l+r)/2-x)*zoom,h/2-y-((t+b)/2-y)*zoom]}
+}
 export type LegendEntry={label:string;colour:string;outline?:boolean}
 type SetbackEdge = {origin:Point; inward:Point}
 
