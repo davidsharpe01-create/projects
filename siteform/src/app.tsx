@@ -44,7 +44,7 @@ function Panel({title,icon,children,count,initial=true}:{title:string;icon:strin
     <Icon name={icon}/><span>{title}</span>{count!==undefined&&<em>{count}</em>}<Icon size={14} name={open?'chevron':'right'}/>
   </button>{open&&children}</section>
 }
-function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=>void}){
+function App({site,close,onSaved,unlock}:{site:Site;close:()=>void;onSaved:(site:Site)=>void;unlock:()=>void}){
   const [history,setHistory]=useState(()=>({past:[] as Project[],current:site.project,future:[] as Project[]}))
   const project=history.current
   const [showSchedule,setShowSchedule]=useState(false)
@@ -583,7 +583,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
           </form>}
         </div></div>
       <div className="top-actions">
-        {!site.canEdit?<span className="read-only-status">View only</span>:saveError?<button className="save" title={saveError} onClick={()=>setRetry(count=>count+1)}><Icon name="warning" size={15}/>Retry save</button>:
+        {!site.canEdit?<button type="button" className="open-schedule" onClick={unlock}>Unlock editing</button>:saveError?<button className="save" title={saveError} onClick={()=>setRetry(count=>count+1)}><Icon name="warning" size={15}/>Retry save</button>:
           <span className="save" role="status"><Icon name={saved?'check':'download'} size={15}/>{saved?'Saved to cloud':'Saving…'}</span>}
         <Button icon="chart" kind="open-schedule" onClick={()=>{setMenu(null);setShowSchedule(true)}}>Schedule</Button>
         <div className="menu-anchor"><Button icon="download" kind="export" onClick={()=>setOption('export')}>Export<Icon name="chevron" size={13}/></Button>
@@ -849,4 +849,4 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   {showSchedule&&<SchedulePage name={site.name} project={project} totals={totals} onBack={()=>setShowSchedule(false)}/>}
   </>
 }
-createRoot(document.getElementById('root')!).render(<SiteWorkspace editor={(site,close,saved)=><App key={site.id} site={site} close={close} onSaved={saved}/>}/>)
+createRoot(document.getElementById('root')!).render(<SiteWorkspace editor={(site,close,saved,unlock)=><App key={site.id} site={site} close={close} onSaved={saved} unlock={unlock}/>}/>)

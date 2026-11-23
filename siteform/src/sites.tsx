@@ -53,10 +53,11 @@ function Preview({project}:{project:Project}){
   </div>
 }
 
-export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(site:Site)=>void)=>React.ReactNode}){
+export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(site:Site)=>void,unlock:()=>void)=>React.ReactNode}){
   const [sites,setSites]=useState<Site[]>()
   const [allSites,setAllSites]=useState(false)
   const [showAccess,setShowAccess]=useState(false)
+  const accessDialog=useRef<HTMLDialogElement>(null)
   const [accessKey,setAccessKey]=useState('')
   const [accessError,setAccessError]=useState('')
   const [site,setSite]=useState<Site>()
@@ -72,6 +73,14 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
     sitesRequest<{sites:Site[];allSites:boolean}>().then(result=>{if(active){setSites(result.sites);setAllSites(result.allSites)}}).catch(failure=>{if(active)setError(failure.message)})
     return()=>{active=false}
   },[attempt])
+  useEffect(()=>{
+    if(site&&showAccess)accessDialog.current?.showModal()
+  },[site,showAccess])
+  function cancelAccess(){
+    setShowAccess(false)
+    setAccessKey('')
+    setAccessError('')
+  }
   function update(saved:Site){
     setSites(list=>[saved,...(list??[]).filter(existing=>existing.id!==saved.id)])
   }
@@ -96,19 +105,42 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
     setAccessError('')
     try{
       await sitesRequest('PATCH',lock?{lock:true}:{key:accessKey.trim()})
-      setAccessKey('')
-      setShowAccess(false)
-      setError('')
-      setSites(undefined)
-      setAttempt(value=>value+1)
+      if(site){
+        const result=await sitesRequest<{sites:Site[];allSites:boolean}>()
+        const editable=result.sites.find(item=>item.id===site.id)
+        if(!editable?.canEdit)throw new Error('Editing could not be enabled for this project.')
+        setAllSites(result.allSites)
+        setSites(result.sites)
+        setSite({...site,canEdit:true})
+      }else{
+        setError('')
+        setSites(undefined)
+        setAttempt(value=>value+1)
+      }
+      cancelAccess()
     }catch(failure){setAccessError(failure instanceof Error?failure.message:'Could not change project access.')}
     finally{setBusy(false)}
   }
-  if(site)return editor(site,()=>{
-    setSite(undefined)
-    setSites(undefined)
-    setAttempt(value=>value+1)
-  },update)
+  const accessForm=<form className="site-create" onSubmit={event=>{event.preventDefault();void changeAccess()}}>
+    <label>Project editing key <input type="password" autoFocus value={accessKey} onChange={event=>setAccessKey(event.target.value)} maxLength={128} required/></label>
+    <button className="primary" disabled={busy||!accessKey.trim()}>Unlock</button>
+    <button type="button" disabled={busy} onClick={cancelAccess}>Cancel</button>
+    {accessError&&<p role="alert">{accessError}</p>}
+  </form>
+  if(site)return <>
+    {editor(site,()=>{
+      setSite(undefined)
+      setSites(undefined)
+      setAttempt(value=>value+1)
+    },update,()=>setShowAccess(true))}
+    {showAccess&&<dialog className="project-access-dialog" ref={accessDialog} onCancel={event=>{
+      event.preventDefault()
+      if(!busy)cancelAccess()
+    }}>
+      <h2>Unlock project editing</h2>
+      {accessForm}
+    </dialog>}
+  </>
   return <main className="sites-overview">
     <header className="sites-heading"><h1>All projects</h1>
       <div className="sites-actions">
@@ -119,12 +151,8 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
         <button className="primary" type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('new')}}>New site</button>
       </div>
     </header>
-    {showAccess&&<form className="site-create" onSubmit={event=>{event.preventDefault();void changeAccess()}}>
-      <label>Project editing key <input type="password" autoFocus value={accessKey} onChange={event=>setAccessKey(event.target.value)} maxLength={128} required/></label>
-      <button className="primary" disabled={busy||!accessKey.trim()}>Unlock</button>
-      <button type="button" onClick={()=>{setShowAccess(false);setAccessKey('');setAccessError('')}}>Cancel</button>
-    </form>}
-    {accessError&&<p role="alert">{accessError}</p>}
+    {showAccess&&accessForm}
+    {!showAccess&&accessError&&<p role="alert">{accessError}</p>}
     {form&&<form className="site-create" onSubmit={create}>
       <label>Site name <input autoFocus value={name} onChange={event=>setName(event.target.value)} maxLength={100} required/></label>
       <button className="primary" disabled={busy||!name.trim()}>{form==='import'?'Import site':'Create site'}</button>
@@ -139,7 +167,7 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
         return <button className="site-card" key={item.id} onClick={()=>setSite(item)}>
           <Preview project={item.project}/>
           <span className="site-card-details"><strong>{item.name}</strong><small>{location?
-            `${location.lat.toFixed(5)}°, ${location.lon.toFixed(5)}°`:'No mapped boundary yet'}</small></span>
+            `${location.lat.toFixed(5)}°, ${location.lon.toFixed(5)}°`:'No mapped boundary yet'}</small>{!item.canEdit&&<small>View only</small>}</span>
         </button>
       })}
     </div>
