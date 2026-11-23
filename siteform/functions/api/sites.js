@@ -13,8 +13,8 @@ const json = (body, status = 200, headers = {}) => Response.json(body, {
   status, headers: {'Cache-Control': 'no-store', ...headers}
 })
 
-function parseSite(row) {
-  return {id:row.id, name:row.name, project:JSON.parse(row.data), revision:row.revision, updatedAt:row.updated_at}
+function parseSite(row, canEdit) {
+  return {id:row.id, name:row.name, project:JSON.parse(row.data), revision:row.revision, updatedAt:row.updated_at, canEdit}
 }
 
 export async function onRequest({request, env}) {
@@ -50,11 +50,8 @@ export async function onRequest({request, env}) {
   const db = env.SITES_DB
   try {
     if (method === 'GET') {
-      const query = allSites
-        ? db.prepare('SELECT * FROM sites ORDER BY updated_at DESC, id')
-        : db.prepare('SELECT * FROM sites WHERE workspace = ? ORDER BY updated_at DESC, id').bind(workspace ?? '')
-      const {results} = await query.all()
-      return json({sites:results.map(parseSite),allSites},200,workspaceCookie)
+      const {results} = await db.prepare('SELECT * FROM sites ORDER BY updated_at DESC, id').all()
+      return json({sites:results.map(row=>parseSite(row,allSites||authenticated&&row.workspace===workspace)),allSites},200,workspaceCookie)
     }
     if (Number(headers.get('Content-Length')) > maxBytes) return json({error:'This site is too large to save.'}, 413)
     const raw = await request.text()
@@ -73,7 +70,7 @@ export async function onRequest({request, env}) {
       const id = crypto.randomUUID()
       await db.prepare('INSERT INTO sites (id, workspace, name, data, updated_at) VALUES (?, ?, ?, ?, ?)')
         .bind(id, authenticated ? workspace : newWorkspace, name, data, now).run()
-      return json({id, name, revision:0, updatedAt:now, project}, 201, workspaceCookie)
+      return json({id, name, revision:0, updatedAt:now, project, canEdit:true}, 201, workspaceCookie)
     }
     const {id, revision} = input
     if (typeof id !== 'string' || !Number.isSafeInteger(revision) || revision < 0) {

@@ -4,7 +4,7 @@ import type {Project} from './model'
 import {draw,fitCamera,home} from './scene'
 import {emptyContext} from './context'
 
-export type Site={id:string;name:string;project:Project;revision:number;updatedAt:number}
+export type Site={id:string;name:string;project:Project;revision:number;updatedAt:number;canEdit:boolean}
 type SaveReceipt=Pick<Site,'revision'|'updatedAt'>
 
 async function sitesRequest<T>(method='GET',body?:unknown):Promise<T>{
@@ -110,17 +110,17 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
     setAttempt(value=>value+1)
   },update)
   return <main className="sites-overview">
-    <header className="sites-heading"><h1>{allSites?'All projects':'Sites'}</h1>
+    <header className="sites-heading"><h1>All projects</h1>
       <div className="sites-actions">
         <button type="button" disabled={!sites||busy} onClick={()=>allSites?void changeAccess(true):setShowAccess(!showAccess)}>
-          {allSites?'Lock all projects':'All projects'}
+          {allSites?'Lock editing':'Unlock editing'}
         </button>
         {browserSite&&!imported&&<button type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('import')}}>Import browser site</button>}
         <button className="primary" type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('new')}}>New site</button>
       </div>
     </header>
     {showAccess&&<form className="site-create" onSubmit={event=>{event.preventDefault();void changeAccess()}}>
-      <label>Project access key <input type="password" autoFocus value={accessKey} onChange={event=>setAccessKey(event.target.value)} maxLength={128} required/></label>
+      <label>Project editing key <input type="password" autoFocus value={accessKey} onChange={event=>setAccessKey(event.target.value)} maxLength={128} required/></label>
       <button className="primary" disabled={busy||!accessKey.trim()}>Unlock</button>
       <button type="button" onClick={()=>{setShowAccess(false);setAccessKey('');setAccessError('')}}>Cancel</button>
     </form>}

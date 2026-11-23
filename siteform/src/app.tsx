@@ -197,12 +197,13 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   },[])
   useLayoutEffect(()=>{
     if(!canvas.current)return
-    scene.current=draw(canvas.current,{showFloorplates,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
+    scene.current=draw(canvas.current,{showFloorplates,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:site.canEdit&&tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
     const entries=scene.current.legend
     setLegend(previous=>previous.length===entries.length&&previous.every((item,i)=>
       item.label===entries[i].label&&item.colour===entries[i].colour&&item.outline===entries[i].outline)?previous:entries)
-  },[showFloorplates,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
+  },[site.canEdit,showFloorplates,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
   function commit(next:Project,trimUpper=false){
+    if(!site.canEdit)return false
     for(const block of next.blocks){
       const layout=apartmentLayout(block,next)
       if(!layout||layout.ok)continue
@@ -221,6 +222,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   function undo(){setHistory(h=>h.past.length?{past:h.past.slice(0,-1),current:h.past.at(-1)!,future:[h.current,...h.future]}:h)}
   function redo(){setHistory(h=>h.future.length?{past:[...h.past,h.current],current:h.future[0],future:h.future.slice(1)}:h)}
   function choose(next:Tool){
+    if(!site.canEdit&&next!=='select'&&next!=='measure'&&next!=='ghost'&&next!=='show')return
     setDraft([]);setGuide(undefined);setNotice('');setTool(next);setMenu(null)
     if(next!=='select')setEditFloor(0)
     if(next==='boundary'||isBuildingTool(next)||next==='measure'||next==='vertices')setFloor(0)
@@ -269,7 +271,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(commit({...project,blocks:project.blocks.filter(b=>b.id!==selected.id)}))setSelection(null)
   }
   const deleteFromKeyboard=useEffectEvent((event:KeyboardEvent)=>{
-    if(showSchedule)return
+    if(showSchedule||!site.canEdit)return
     if(event.key!=='Delete'&&event.key!=='Backspace')return
     if(event.defaultPrevented||event.repeat||event.isComposing||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return
     if(!selected||drag.current||menu||(tool!=='select'&&tool!=='move'&&tool!=='rotate'))return
@@ -351,6 +353,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(!d||length(screen,d.screen)<3&&!d.changed)return
     d.changed=true
     const offset=pointDiff(screen,d.screen)
+    if(!site.canEdit&&['height','setback','vertices','move','rotate'].includes(d.action))return
     if(d.action==='height'){
       const pixelsPerMetre=geometry(d.camera).s*Math.sqrt(1-d.camera.tilt**2)
       setPreview({...d.project,blocks:d.project.blocks.map(b=>{
@@ -580,7 +583,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
           </form>}
         </div></div>
       <div className="top-actions">
-        {saveError?<button className="save" title={saveError} onClick={()=>setRetry(count=>count+1)}><Icon name="warning" size={15}/>Retry save</button>:
+        {!site.canEdit?<span className="read-only-status">View only</span>:saveError?<button className="save" title={saveError} onClick={()=>setRetry(count=>count+1)}><Icon name="warning" size={15}/>Retry save</button>:
           <span className="save" role="status"><Icon name={saved?'check':'download'} size={15}/>{saved?'Saved to cloud':'Saving…'}</span>}
         <Button icon="chart" kind="open-schedule" onClick={()=>{setMenu(null);setShowSchedule(true)}}>Schedule</Button>
         <div className="menu-anchor"><Button icon="download" kind="export" onClick={()=>setOption('export')}>Export<Icon name="chevron" size={13}/></Button>
