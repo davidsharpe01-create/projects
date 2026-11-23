@@ -44,7 +44,7 @@ function Panel({title,icon,children,count,initial=true}:{title:string;icon:strin
     <Icon name={icon}/><span>{title}</span>{count!==undefined&&<em>{count}</em>}<Icon size={14} name={open?'chevron':'right'}/>
   </button>{open&&children}</section>
 }
-function App({site,close,onSaved,unlock}:{site:Site;close:()=>void;onSaved:(site:Site)=>void;unlock:()=>void}){
+function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=>void}){
   const [history,setHistory]=useState(()=>({past:[] as Project[],current:site.project,future:[] as Project[]}))
   const project=history.current
   const [showSchedule,setShowSchedule]=useState(false)
@@ -197,13 +197,12 @@ function App({site,close,onSaved,unlock}:{site:Site;close:()=>void;onSaved:(site
   },[])
   useLayoutEffect(()=>{
     if(!canvas.current)return
-    scene.current=draw(canvas.current,{showFloorplates,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:site.canEdit&&tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
+    scene.current=draw(canvas.current,{showFloorplates,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted,drafting:!!preview})
     const entries=scene.current.legend
     setLegend(previous=>previous.length===entries.length&&previous.every((item,i)=>
       item.label===entries[i].label&&item.colour===entries[i].colour&&item.outline===entries[i].outline)?previous:entries)
-  },[site.canEdit,showFloorplates,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
+  },[showFloorplates,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
   function commit(next:Project,trimUpper=false){
-    if(!site.canEdit)return false
     for(const block of next.blocks){
       const layout=apartmentLayout(block,next)
       if(!layout||layout.ok)continue
@@ -222,7 +221,6 @@ function App({site,close,onSaved,unlock}:{site:Site;close:()=>void;onSaved:(site
   function undo(){setHistory(h=>h.past.length?{past:h.past.slice(0,-1),current:h.past.at(-1)!,future:[h.current,...h.future]}:h)}
   function redo(){setHistory(h=>h.future.length?{past:[...h.past,h.current],current:h.future[0],future:h.future.slice(1)}:h)}
   function choose(next:Tool){
-    if(!site.canEdit&&next!=='select'&&next!=='measure'&&next!=='ghost'&&next!=='show')return
     setDraft([]);setGuide(undefined);setNotice('');setTool(next);setMenu(null)
     if(next!=='select')setEditFloor(0)
     if(next==='boundary'||isBuildingTool(next)||next==='measure'||next==='vertices')setFloor(0)
@@ -271,7 +269,7 @@ function App({site,close,onSaved,unlock}:{site:Site;close:()=>void;onSaved:(site
     if(commit({...project,blocks:project.blocks.filter(b=>b.id!==selected.id)}))setSelection(null)
   }
   const deleteFromKeyboard=useEffectEvent((event:KeyboardEvent)=>{
-    if(showSchedule||!site.canEdit)return
+    if(showSchedule)return
     if(event.key!=='Delete'&&event.key!=='Backspace')return
     if(event.defaultPrevented||event.repeat||event.isComposing||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return
     if(!selected||drag.current||menu||(tool!=='select'&&tool!=='move'&&tool!=='rotate'))return
@@ -353,7 +351,6 @@ function App({site,close,onSaved,unlock}:{site:Site;close:()=>void;onSaved:(site
     if(!d||length(screen,d.screen)<3&&!d.changed)return
     d.changed=true
     const offset=pointDiff(screen,d.screen)
-    if(!site.canEdit&&['height','setback','vertices','move','rotate'].includes(d.action))return
     if(d.action==='height'){
       const pixelsPerMetre=geometry(d.camera).s*Math.sqrt(1-d.camera.tilt**2)
       setPreview({...d.project,blocks:d.project.blocks.map(b=>{
@@ -583,7 +580,7 @@ function App({site,close,onSaved,unlock}:{site:Site;close:()=>void;onSaved:(site
           </form>}
         </div></div>
       <div className="top-actions">
-        {!site.canEdit?<button type="button" className="open-schedule" onClick={unlock}>Unlock editing</button>:saveError?<button className="save" title={saveError} onClick={()=>setRetry(count=>count+1)}><Icon name="warning" size={15}/>Retry save</button>:
+        {saveError?<button className="save" title={saveError} onClick={()=>setRetry(count=>count+1)}><Icon name="warning" size={15}/>Retry save</button>:
           <span className="save" role="status"><Icon name={saved?'check':'download'} size={15}/>{saved?'Saved to cloud':'Saving…'}</span>}
         <Button icon="chart" kind="open-schedule" onClick={()=>{setMenu(null);setShowSchedule(true)}}>Schedule</Button>
         <div className="menu-anchor"><Button icon="download" kind="export" onClick={()=>setOption('export')}>Export<Icon name="chevron" size={13}/></Button>
@@ -849,4 +846,4 @@ function App({site,close,onSaved,unlock}:{site:Site;close:()=>void;onSaved:(site
   {showSchedule&&<SchedulePage name={site.name} project={project} totals={totals} onBack={()=>setShowSchedule(false)}/>}
   </>
 }
-createRoot(document.getElementById('root')!).render(<SiteWorkspace editor={(site,close,saved,unlock)=><App key={site.id} site={site} close={close} onSaved={saved} unlock={unlock}/>}/>)
+createRoot(document.getElementById('root')!).render(<SiteWorkspace editor={(site,close,saved)=><App key={site.id} site={site} close={close} onSaved={saved}/>}/>)

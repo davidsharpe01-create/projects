@@ -275,10 +275,3 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
   .open-schedule { padding: 6px; }
   .open-schedule svg { display: none; }
 }
-
-.project-access-dialog { max-width: min(100% - 24px, 480px); border: 1px solid var(--line); padding: 20px; }
-.project-access-dialog::backdrop { background: #201d1966; }
-.project-access-dialog h2 { margin: 0 0 14px; font-size: 20px; }
-.project-access-dialog .site-create { padding: 0; border: 0; margin: 0; }
-.project-access-dialog button { border: 1px solid var(--line); padding: 8px 12px; }
-.project-access-dialog .primary { color: white; background: var(--accent); }
