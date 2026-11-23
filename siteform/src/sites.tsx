@@ -55,6 +55,10 @@ function Preview({project}:{project:Project}){
 
 export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(site:Site)=>void)=>React.ReactNode}){
   const [sites,setSites]=useState<Site[]>()
+  const [allSites,setAllSites]=useState(false)
+  const [showAccess,setShowAccess]=useState(false)
+  const [accessKey,setAccessKey]=useState('')
+  const [accessError,setAccessError]=useState('')
   const [site,setSite]=useState<Site>()
   const [form,setForm]=useState<'new'|'import'>()
   const [name,setName]=useState('')
@@ -65,7 +69,7 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
   const [attempt,setAttempt]=useState(0)
   useEffect(()=>{
     let active=true
-    sitesRequest<Site[]>().then(result=>{if(active)setSites(result)}).catch(failure=>{if(active)setError(failure.message)})
+    sitesRequest<{sites:Site[];allSites:boolean}>().then(result=>{if(active){setSites(result.sites);setAllSites(result.allSites)}}).catch(failure=>{if(active)setError(failure.message)})
     return()=>{active=false}
   },[attempt])
   function update(saved:Site){
@@ -86,18 +90,41 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
     }catch(failure){setError(failure instanceof Error?failure.message:'Could not create site.')}
     finally{setBusy(false)}
   }
+  async function changeAccess(lock=false){
+    if(busy)return
+    setBusy(true)
+    setAccessError('')
+    try{
+      await sitesRequest('PATCH',lock?{lock:true}:{key:accessKey.trim()})
+      setAccessKey('')
+      setShowAccess(false)
+      setError('')
+      setSites(undefined)
+      setAttempt(value=>value+1)
+    }catch(failure){setAccessError(failure instanceof Error?failure.message:'Could not change project access.')}
+    finally{setBusy(false)}
+  }
   if(site)return editor(site,()=>{
     setSite(undefined)
     setSites(undefined)
     setAttempt(value=>value+1)
   },update)
   return <main className="sites-overview">
-    <header className="sites-heading"><h1>Sites</h1>
+    <header className="sites-heading"><h1>{allSites?'All projects':'Sites'}</h1>
       <div className="sites-actions">
+        <button type="button" disabled={!sites||busy} onClick={()=>allSites?void changeAccess(true):setShowAccess(!showAccess)}>
+          {allSites?'Lock all projects':'All projects'}
+        </button>
         {browserSite&&!imported&&<button type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('import')}}>Import browser site</button>}
         <button className="primary" type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('new')}}>New site</button>
       </div>
     </header>
+    {showAccess&&<form className="site-create" onSubmit={event=>{event.preventDefault();void changeAccess()}}>
+      <label>Project access key <input type="password" autoFocus value={accessKey} onChange={event=>setAccessKey(event.target.value)} maxLength={128} required/></label>
+      <button className="primary" disabled={busy||!accessKey.trim()}>Unlock</button>
+      <button type="button" onClick={()=>{setShowAccess(false);setAccessKey('');setAccessError('')}}>Cancel</button>
+    </form>}
+    {accessError&&<p role="alert">{accessError}</p>}
     {form&&<form className="site-create" onSubmit={create}>
       <label>Site name <input autoFocus value={name} onChange={event=>setName(event.target.value)} maxLength={100} required/></label>
       <button className="primary" disabled={busy||!name.trim()}>{form==='import'?'Import site':'Create site'}</button>

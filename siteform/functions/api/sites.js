@@ -1,5 +1,13 @@
 const cookieName = '__Host-sites-workspace'
 const workspacePattern = /^[a-f0-9]{64}$/
+const accessCookie = '__Host-sites-access'
+const cookieOptions = '; Path=/; HttpOnly; Secure; SameSite=Strict'
+function equalToken(candidate, expected) {
+  if (typeof candidate !== 'string' || candidate.length !== expected.length) return false
+  let difference = 0
+  for (let i = 0; i < expected.length; i++) difference |= candidate.charCodeAt(i) ^ expected.charCodeAt(i)
+  return difference === 0
+}
 const maxBytes = 2_000_000
 const json = (body, status = 200, headers = {}) => Response.json(body, {
   status, headers: {'Cache-Control': 'no-store', ...headers}
@@ -12,24 +20,41 @@ function parseSite(row) {
 export async function onRequest({request, env}) {
   if (!env.SITES_DB) return json({error:'Cloud storage is unavailable.'}, 503)
   const {method, headers} = request
-  if (!['GET', 'POST', 'PUT'].includes(method)) return json({error:'Method not allowed.'}, 405, {Allow:'GET, POST, PUT'})
-  const cookie = headers.get('Cookie')?.split(';').map(value => value.trim()).find(value => value.startsWith(cookieName+'='))
-  const workspace = cookie?.slice(cookieName.length+1)
+  if (!['GET', 'POST', 'PUT', 'PATCH'].includes(method)) return json({error:'Method not allowed.'}, 405, {Allow:'GET, POST, PUT, PATCH'})
+  const cookies = headers.get('Cookie')?.split(';').map(value => value.trim()) ?? []
+  const readCookie = name => cookies.find(value => value.startsWith(name+'='))?.slice(name.length+1)
+  const workspace = readCookie(cookieName)
   const authenticated = workspacePattern.test(workspace ?? '')
-  if (method === 'GET' && !authenticated) {
-    const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '')
-    return json([], 200, {'Set-Cookie':cookieName+'='+token+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=31536000'})
+  const accessKey = env.SITES_ACCESS_KEY
+  const session = accessKey ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',
+    new TextEncoder().encode('sites-session:'+accessKey))), byte => byte.toString(16).padStart(2,'0')).join('') : ''
+  const allSites = !!accessKey && equalToken(readCookie(accessCookie),session)
+  const origin = headers.get('Origin')
+  if (method !== 'GET' && ((origin && origin !== new URL(request.url).origin) ||
+      !headers.get('Content-Type')?.startsWith('application/json'))) {
+    return json({error:'Unsupported request.'}, 403)
   }
-  if (!authenticated) return json({error:'Reload the sites overview to start a workspace.'}, 401)
+  if (method === 'PATCH') {
+    if (!accessKey) return json({error:'Project access is unavailable.'}, 503)
+    if (Number(headers.get('Content-Length')) > 512) return json({error:'Invalid access request.'}, 400)
+    const input = await request.json().catch(()=>null)
+    if (input?.lock === true) return json({ok:true},200,{'Set-Cookie':accessCookie+'='+cookieOptions+'; Max-Age=0'})
+    if (!equalToken(input?.key,accessKey)) return json({error:'Incorrect access key.'},401)
+    return json({ok:true},200,{'Set-Cookie':accessCookie+'='+session+cookieOptions+'; Max-Age=2592000'})
+  }
+  const newWorkspace = authenticated ? undefined : crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '')
+  const workspaceCookie = newWorkspace ? {'Set-Cookie':cookieName+'='+newWorkspace+cookieOptions+'; Max-Age=31536000'} : {}
+  if (method !== 'GET' && !authenticated && !allSites) {
+    return json({error:'Reload the sites overview to start a workspace.'}, 401)
+  }
   const db = env.SITES_DB
   try {
     if (method === 'GET') {
-      const {results} = await db.prepare('SELECT * FROM sites WHERE workspace = ? ORDER BY updated_at DESC, id').bind(workspace).all()
-      return json(results.map(parseSite))
-    }
-    const origin = headers.get('Origin')
-    if ((origin && origin !== new URL(request.url).origin) || !headers.get('Content-Type')?.startsWith('application/json')) {
-      return json({error:'Unsupported request.'}, 403)
+      const query = allSites
+        ? db.prepare('SELECT * FROM sites ORDER BY updated_at DESC, id')
+        : db.prepare('SELECT * FROM sites WHERE workspace = ? ORDER BY updated_at DESC, id').bind(workspace ?? '')
+      const {results} = await query.all()
+      return json({sites:results.map(parseSite),allSites},200,workspaceCookie)
     }
     if (Number(headers.get('Content-Length')) > maxBytes) return json({error:'This site is too large to save.'}, 413)
     const raw = await request.text()
@@ -47,15 +72,18 @@ export async function onRequest({request, env}) {
       if (!name || name.length > 100) return json({error:'Enter a site name up to 100 characters.'}, 400)
       const id = crypto.randomUUID()
       await db.prepare('INSERT INTO sites (id, workspace, name, data, updated_at) VALUES (?, ?, ?, ?, ?)')
-        .bind(id, workspace, name, data, now).run()
-      return json({id, name, revision:0, updatedAt:now, project}, 201)
+        .bind(id, authenticated ? workspace : newWorkspace, name, data, now).run()
+      return json({id, name, revision:0, updatedAt:now, project}, 201, workspaceCookie)
     }
     const {id, revision} = input
     if (typeof id !== 'string' || !Number.isSafeInteger(revision) || revision < 0) {
       return json({error:'Invalid site or revision.'}, 400)
     }
-    const {meta} = await db.prepare('UPDATE sites SET data = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND workspace = ? AND revision = ?')
-      .bind(data, now, id, workspace, revision).run()
+    const update = db.prepare('UPDATE sites SET data = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?'+
+      (allSites?'':' AND workspace = ?'))
+    const params = [data, now, id, revision]
+    if (!allSites) params.push(workspace)
+    const {meta} = await update.bind(...params).run()
     if (!meta.changes) return json({error:'The saved site has changed. Reopen it to load the latest version.'}, 409)
     return json({revision:revision+1, updatedAt:now})
   } catch {
