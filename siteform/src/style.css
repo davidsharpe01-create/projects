@@ -70,6 +70,7 @@ canvas.drawing { cursor: crosshair }
 .notice { top: 17px; bottom: auto; z-index: 2 }
 .sidebar { overflow: auto; background: var(--white); border-left: 1px solid var(--line); scrollbar-width: thin }
 .overview { padding: 22px 22px 16px; border-bottom: 1px solid var(--line) }
+.block-typology { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .heading { display: flex; align-items: center; justify-content: space-between; gap: 10px }
 h1 { margin: 0; font-size: 34px; font-weight: 500; letter-spacing: -.055em; line-height: 1 }
 .summary-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 23px; gap: 12px }
@@ -78,16 +79,7 @@ h1 { margin: 0; font-size: 34px; font-weight: 500; letter-spacing: -.055em; line
 .summary-grid strong { font-size: clamp(20px,2vw,30px); font-weight: 500; line-height: 1; letter-spacing: -.055em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere }
 .summary-grid strong small { font-size: 11px; letter-spacing: 0; color: var(--muted) }
 .summary-note { margin: 15px 0 0; line-height: 1.4; font-size: 11px }
-.block-list { padding: 17px 22px 13px; border-bottom: 1px solid var(--line) }
-.section-label { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 8px; font-size: 16px; font-weight: 600; letter-spacing: -.02em }
-.section-label span, .panel-toggle em { color: var(--muted); font-weight: 400; font-size: 11px; font-style: normal }
-.block-row { width: 100%; min-height: 46px; padding: 6px 5px; justify-content: start; text-align: left; gap: 9px }
-.block-row:hover { background: var(--paper) }
-.block-row.selected { box-shadow: inset 2px 0 var(--accent); background: var(--accent-wash) }
-.block-icon { width: 25px; height: 26px; display: grid; place-items: center; flex-shrink: 0 }
-.block-name { display: grid; gap: 2px; margin-right: auto }
-.block-name strong { font-size: 13px; font-weight: 600 }
-.block-name small, .storeys { font-size: 11px; color: var(--muted) }
+.panel-toggle em { color: var(--muted); font-weight: 400; font-size: 11px; font-style: normal }
 .panel { border-bottom: 1px solid var(--line) }
 .panel-toggle { width: 100%; min-height: 46px; justify-content: start; padding: 0 22px; gap: 8px; text-align: left }
 .panel-toggle:hover { background: var(--paper) }
@@ -106,8 +98,6 @@ h1 { margin: 0; font-size: 34px; font-weight: 500; letter-spacing: -.055em; line
 .property-actions svg { width: 14px; height: 14px }
 .vertex-hint { margin-right: auto; color: var(--muted); font-size: 11px }
 .setback-picker { margin-top: 10px }
-.empty { font-size: 12px; color: var(--muted); line-height: 1.45 }
-.empty { margin: 0 }
 footer { z-index: 5; padding: 0 19px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted) }
 footer>div, .snap { display: flex; align-items: center; gap: 8px }
 .snap { white-space: nowrap; gap: 5px }
@@ -287,14 +277,13 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
 .popover, .map-legend, .compass, .map-right button, .floor-picker, .context-status, .draw-message {
   border-radius: 13px; box-shadow: var(--floating-shadow);
 }
-.popover button, .block-row, .field > div, .field > select { border-radius: 9px; }
+.popover button, .field > div, .field > select { border-radius: 9px; }
 .sidebar { background: #faf9f6; }
-.sidebar .overview, .sidebar .block-list, .sidebar .panel {
+.sidebar .overview, .sidebar .panel {
   margin: 10px; background: white; border: 1px solid #ebe8e1; border-radius: 15px; box-shadow: var(--surface-shadow);
 }
 .summary-grid { margin-top: 15px; }
 .summary-grid > div { background: #f5f3ee; padding: 11px; border-radius: 11px; }
-.block-row.selected { box-shadow: none; }
 .sites-overview { max-width: 1280px; padding: clamp(24px, 5vw, 64px); }
 body:has(.sites-overview) { background: #f6f5f1; }
 .sites-heading { margin-bottom: 26px; }

@@ -131,10 +131,6 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const selectedLayout=selected?apartmentLayout(selected,project):undefined
   const selectedUnits=selectedLayout?.ok?selectedLayout.floors.flatMap(f=>f.units):[]
   const summary=useMemo(()=>selected?development({...project,blocks:[selected]}):totals,[selected,project,totals])
-  const higherRiskBlocks=useMemo(()=>new Set(project.blocks.flatMap(block=>{
-    const layout=apartmentLayout(block,project)
-    return layout?.ok&&layout.hrb?[block.id]:[]
-  })),[project])
   const storyCount=Math.max(1,...project.blocks.map(floors))
   const reportSave=useEffectEvent((savedSite:Site)=>onSaved(savedSite))
   useEffect(()=>{
@@ -674,7 +670,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       </section>
       <aside className="sidebar" aria-label="Project inspector">
         <div className="overview">
-          <div className="heading"><h1>{selected?.name??'Overview'}</h1>{selected&&<button type="button" className="secondary" onClick={()=>{choose('select');revealBlock(null);setEditFloor(0)}}>Clear selection</button>}</div>
+          <div className="heading"><div><h1>{selected?.name??'Overview'}</h1>{selected&&<p className="block-typology">{blockTypes[selected.type].label}{selectedLayout?.ok&&selectedLayout.hrb?' (HRB)':''}</p>}</div>{selected&&<button type="button" className="secondary" onClick={()=>{choose('select');revealBlock(null);setEditFloor(0)}}>Clear selection</button>}</div>
           <div className="summary-grid" aria-live="polite">
             <div><span>Homes</span><strong>{summary.homes===null?'—':format(summary.homes)}</strong></div>
             {selected?<div><span>GIA</span><strong>{summary.gia===null?'—':format(summary.gia)}</strong><small>m²</small></div>:
@@ -697,15 +693,6 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
               <dd>{totals.giaByUse[type]===null?'—':format(totals.giaByUse[type])+' m²'}</dd>
             </div>)}
           </dl></>}
-        </div>
-        <div className="block-list">
-          <h2 className="section-label">Buildings{project.blocks.length>0&&<span>{project.blocks.length}</span>}</h2>
-          {project.blocks.map(b=><button key={b.id} className={'block-row '+(b.id===selection?'selected':'')} onClick={()=>{choose('select');revealBlock(b.id);setFloor(0);setEditFloor(0)}}>
-            <span className={'block-icon '+b.type}><Icon name={b.type==='apartment'?'building':b.type} size={16}/></span>
-            <span className="block-name"><strong>{b.name}</strong><small>{blockTypes[b.type].label}{higherRiskBlocks.has(b.id)?' (HRB)':''}</small></span>
-            <span className="storeys">{floors(b)}F</span><Icon name="right" size={13}/>
-          </button>)}
-          {!project.blocks.length&&<p className="empty">Choose a building type to draw a frontage.</p>}
         </div>
         {selected&&s&&<Panel title={selected.name+' properties'} icon="settings">
           <div className="properties" key={selected.id}>
