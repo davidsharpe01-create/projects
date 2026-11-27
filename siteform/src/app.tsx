@@ -651,7 +651,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         </div>
       </div>
     </section>
-    <main>
+    <main className="model-layout">
       <section className="workspace" aria-label="Site workspace">
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
           onPointerDown={start} onPointerMove={move} onPointerUp={end} onClick={clickCanvas} onPointerCancel={e=>{if(releaseTouch(e))return;drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
@@ -713,17 +713,20 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       </section>
       <aside className={'sidebar'+(showInspector?' inspector-expanded':'')} aria-label="Project inspector">
         <div className="overview">
-          <div className="heading"><div><h1>{selected?.name??'Overview'}</h1>{selected&&<p className="block-typology">{blockTypes[selected.type].label}{selectedLayout?.ok&&selectedLayout.hrb?' (HRB)':''}</p>}</div>{selected&&<button type="button" className="secondary" onClick={()=>{choose('select');revealBlock(null);setEditFloor(0)}}>Clear selection</button>}
-            <button type="button" className="inspector-toggle" aria-expanded={showInspector} aria-label={showInspector?'Collapse overview':'Expand overview'} onClick={()=>setShowInspector(!showInspector)}><Icon name="chevron" size={16}/></button>
+          <div className="heading"><div className="overview-title"><h1>{selected?.name??'Overview'}</h1>{selected&&<p className="block-typology">{blockTypes[selected.type].label}{selectedLayout?.ok&&selectedLayout.hrb?' (HRB)':''}</p>}</div>{selected&&<button type="button" className="secondary" onClick={()=>{choose('select');revealBlock(null);setEditFloor(0)}}>Clear selection</button>}
+            <button type="button" className="inspector-toggle" aria-expanded={showInspector} aria-controls="inspector-details" aria-label={showInspector?'Collapse overview':'Expand overview'} onClick={()=>setShowInspector(!showInspector)}><Icon name="chevron" size={16}/></button>
           </div>
           <div className="summary-grid" aria-live="polite">
             <div><span>Homes</span><strong>{summary.homes===null?'—':format(summary.homes)}</strong></div>
-            {selected?<div><span>GIA</span><strong>{summary.gia===null?'—':format(summary.gia)}</strong><small>m²</small></div>:
+            {selected?<div><span>GIA</span><strong>{summary.gia===null?'—':format(summary.gia)} <small>m²</small></strong></div>:
               <div><span title="Dwellings per hectare">Density</span><strong>{totals.site&&totals.density!==null?format(totals.density,1):'—'} <small>dph</small></strong></div>}
             <div title="Level 1 and above: net dwelling area ÷ gross internal area of modelled houses and subdivided apartment blocks">
               <span>Efficiency (L1+)</span><strong>{summary.efficiency===null?'—':format(summary.efficiency,1)+'%'}</strong><small>NIA / GIA</small>
             </div>
           </div>
+        </div>
+        <div className="inspector-details" id="inspector-details">
+          <div className="overview-details">
           {(!selected||selected.type==='house'||selected.type==='apartment')&&<p className="summary-note">{format(summary.houses)} houses · {summary.estimatedApartments===null?'Apartment estimate unavailable':format(summary.estimatedApartments??0)+' estimated apartments'}{summary.generatedApartments>0?' · '+format(summary.generatedApartments)+' subdivided apartments':''}</p>}
           {(!selected||selected.type==='apartment'&&!selectedLayout?.ok)&&<div className="yield-setting">
             <NumberField label="Apartment GIA per home" value={totals.apartmentAreaPerHome} min={1} step={.1} unit="m²"
@@ -845,6 +848,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
             <p className="summary-note">Three-storey area targets are shared with apartments. Two-storey terraces use their own NDSS area minimums.</p>
           </section>
         </Panel>
+        </div>
       </aside>
     </main>
     <footer>
