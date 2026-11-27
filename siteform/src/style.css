@@ -87,6 +87,7 @@ h1 { margin: 0; font-size: 34px; font-weight: 500; letter-spacing: -.055em; line
 .panel-toggle svg:first-child { width: 15px; height: 15px }
 .panel-toggle span { margin-right: auto; font-size: 13px; font-weight: 600 }
 .properties { padding: 0 22px 14px }
+.property-type { margin-bottom: 10px; }
 .property-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 10px }
 .field, .readout { min-width: 0; display: grid; gap: 4px; font-size: 11px; color: var(--muted) }
 .field>div, .field>select, .readout strong { height: 30px; border: 1px solid var(--line); background: var(--white); display: flex; align-items: center; padding: 0 7px; color: var(--ink); font-size: 12px }

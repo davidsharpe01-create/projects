@@ -212,6 +212,26 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(!footprintSatisfies(block,project.targets)){setNotice('The frontage and depth must create a valid footprint.');return false}
     return commit({...project,blocks:project.blocks.map(b=>b.id===block.id?block:b)})
   }
+  function changeBlockType(block:Block,type:BlockType){
+    if(type===block.type)return
+    const defaults=blockTypes[type]
+    const fromHouse=block.type==='house'
+    const toHouse=type==='house'
+    const minimumHeight=type==='apartment'?minimumDwellingStoreyHeight:2.5
+    const heights=fromHouse?houseHeights:block
+    const next:Block={
+      ...block,type,
+      depth:fromHouse||toHouse?defaults.depth:block.depth,
+      floors:toHouse?houseStoreys(block):floors(block),
+      ground:toHouse?houseHeights.ground:Math.max(minimumHeight,heights.ground),
+      upper:toHouse?houseHeights.upper:Math.max(minimumHeight,heights.upper),
+      setbacks:toHouse?undefined:block.setbacks,
+      apartmentLayout:undefined
+    }
+    if(!updateBlock(next))return
+    setEditFloor(level=>toHouse?0:Math.min(level,floors(next)-1))
+    setFloor(level=>Math.min(level,floors(next)-1))
+  }
   function subdivide(block:Block){
     const mode=block.depth<14?'single':'double'
     if(commit({...project,blocks:project.blocks.map(b=>b===block?{...b,apartmentLayout:{...defaultApartmentOptions,mode,mix:{...settings.mix}}}:b)})){
@@ -744,6 +764,11 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         </div>
         {selected&&s&&<Panel title={selected.name+' properties'} icon="settings">
           <div className="properties" key={selected.id}>
+            <label className="field property-type"><span>Building type</span>
+              <select value={selected.type} onChange={event=>changeBlockType(selected,event.target.value as BlockType)}>
+                {(Object.keys(blockTypes) as BlockType[]).map(type=><option key={type} value={type}>{blockTypes[type].label}</option>)}
+              </select>
+            </label>
             <div className="property-grid">
               {selected.type!=='house'?<>
                 <NumberField label="Building depth" value={selected.depth} min={3} max={80} step={.1} update={depth=>updateBlock({...selected,depth})}/>
