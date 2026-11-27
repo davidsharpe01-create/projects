@@ -273,7 +273,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     return result.point
   }
   function navigationAction(buttons:number,touch=false){
-    return plan||(buttons&2)!==0||touch&&touchPan?'pan':'orbit'
+    const pan=touch?touchPan:(buttons&1)!==0&&(buttons&2)===0
+    return plan||pan?'pan':'orbit'
   }
   function start(e:PointerEvent<HTMLCanvasElement>){
     drawingClick.current=null
@@ -806,7 +807,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select, or middle-drag, to orbit in 3D. Right-drag to pan. In Plan, navigation drags pan. Scroll to zoom around the cursor. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Scroll to zoom around the cursor. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
