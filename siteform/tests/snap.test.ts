@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {snapAlong,snapAngle,snapPoint,type SnapEdge} from '../src/snap.ts'
-import type {Point} from '../src/model.ts'
+import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapEdge} from '../src/snap.ts'
+import {newBlock,type Point} from '../src/model.ts'
+import {blankProject} from '../src/project.ts'
 
 const face:SnapEdge={a:[0,0],b:[20,0],source:'building',block:'a'}
 const boundary:SnapEdge={a:[30,-10],b:[30,20],source:'boundary'}
@@ -29,4 +30,14 @@ test('a constrained setback stops at the intersection with a nearby boundary',()
   assert.deepEqual(match?.guide.point,[30,8])
   assert.equal(match?.movement,10)
   assert.equal(snapAlong([20,25],[1,0],9,[boundary],screen),undefined)
+})
+
+test('project snap references include buildings and exclude the site redline',()=>{
+  const project=blankProject()
+  project.boundary=[[30,-10],[40,-10],[40,20],[30,20]]
+  project.blocks=[newBlock(project,'office',[[0,0],[20,0]])]
+  const edges=snapEdges(project,0)
+  assert.ok(edges.length>0)
+  assert.ok(edges.every(edge=>edge.source==='building'))
+  assert.equal(snapPoint([30.7,8],edges,screen).guide,undefined)
 })

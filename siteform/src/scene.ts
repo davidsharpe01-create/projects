@@ -8,6 +8,7 @@ import { depthPlane, foregroundShape, pickSurface, visibleSurface, type Surface 
 import { footprints, internalFloorOutline, houseFloorplates, levels, height, floors, floorOutline, endDirection, endInset, inside, area, length, type Point, type Project } from './model'
 const coreFill='#b8babc'
 const editingBlue='#235b88'
+const boundaryRed='#ef262e'
 export type Camera = {angle:number; tilt:number; zoom:number; pan:Point}
 export const home:Camera={angle:-.42,tilt:.63,zoom:1,pan:[0,0]}
 export type Layers = {context:boolean; streets:boolean; aerial:boolean; travel:boolean; floorplates:boolean; grid:boolean}
@@ -63,7 +64,7 @@ function exposedRoute(points:Point[],edges:SetbackEdge[]):Point[][] {
   })
 }
 
-type Scene = {showFloorplates:boolean; camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; drawBuilding:boolean; editBoundary:boolean; drafting?:boolean; context:ContextData; aerial:AerialTile[]; ghosted:ReadonlySet<number>}
+type Scene = {showFloorplates:boolean; camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; drawBuilding:boolean; editBoundary:boolean; skipLayouts?:boolean; context:ContextData; aerial:AerialTile[]; ghosted:ReadonlySet<number>}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
@@ -112,8 +113,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     if(!legend.has(label)&&inView(shape.map(p=>xy(p,z))))legend.set(label,{label,colour,outline})
   }
   const boundary=project.boundary
-  key('Site boundary','#ad574e',boundary,0,true)
-  world(boundary,project.anchor?'#ead7be72':'#e9dbc7','#ad574e',2.1)
+  key('Site boundary',boundaryRed,boundary,0,true)
+  world(boundary,project.anchor?'#ead7be72':'#e9dbc7',boundaryRed,3.4)
   type Drawable=Surface & {paint:()=>void;alpha?:number;rearWall?:boolean;bounds:[number,number,number,number]}
   const surfaces:Drawable[]=[]
   function addSurface(surface:Surface,paint:()=>void,alpha?:number,rearWall=false){
@@ -235,7 +236,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   project.blocks.forEach(b=>{
     if(plan && floor>=floors(b))return
     const polys=footprints(b,project.targets),z=plan?0:height(b,project.houseHeights)+b.level
-    const layout=scene.drafting?undefined:apartmentLayout(b,project)
+    const layout=scene.skipLayouts?undefined:apartmentLayout(b,project)
     const validLayout=layout?.ok?layout:undefined
     const detailed=layers.floorplates||b.id===selected&&scene.showFloorplates
     const stack=!plan&&detailed
@@ -421,9 +422,9 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ?block.line.map(p=>xy(p,plan?0:block.level))
     :editBoundary?boundary.map(p=>xy(p)):[]
   if(block)path(handles,undefined,editingBlue,2,false)
-  handles.forEach(p=>dot(p,block?editingBlue:'#aa5049',5.5))
+  handles.forEach(p=>dot(p,block?editingBlue:boundaryRed,5.5))
   if(draft.length){
-    const colour=scene.drawBuilding?editingBlue:'#a14a42'
+    const colour=scene.drawBuilding?editingBlue:boundaryRed
     world(draft,undefined,colour,2,false)
     if(pointer){ctx.setLineDash([5,5]);world([draft.at(-1)!,pointer],undefined,colour,1.6,false);ctx.setLineDash([])}
     draft.forEach(p=>dot(xy(p),colour,4.2))

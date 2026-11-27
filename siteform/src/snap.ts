@@ -17,7 +17,6 @@ export function snapEdges(project:Project,floor:number) {
       if(length(a,b)>.01)edges.push({a,b,source,block})
     })
   }
-  add(project.boundary,'boundary')
   project.blocks.forEach(block=>{
     if(floor>=floors(block))return
     footprints(block,project.targets).forEach(poly=>

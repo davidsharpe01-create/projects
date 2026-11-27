@@ -3,6 +3,7 @@ import {blankProject,restoreProject,siteLocation} from './project'
 import type {Project} from './model'
 import {draw,fitCamera,home} from './scene'
 import {emptyContext} from './context'
+import {Icon} from './icons'
 
 export type Site={id:string;name:string;project:Project;revision:number;updatedAt:number}
 type SaveReceipt=Pick<Site,'revision'|'updatedAt'>
@@ -41,7 +42,7 @@ function Preview({project}:{project:Project}){
         showFloorplates:false,floor:0,editFloor:0,draft:[],pointer:null,
         layers:{context:false,streets:false,aerial:false,travel:false,floorplates:false,grid:false},
         opacity:1,editFrontage:false,drawBuilding:false,editBoundary:false,
-        drafting:true,context:emptyContext,aerial:[],ghosted:new Set()
+        skipLayouts:true,context:emptyContext,aerial:[],ghosted:new Set()
       })
     }
     const observer=new ResizeObserver(render)
@@ -92,10 +93,10 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
     setAttempt(value=>value+1)
   },update)
   return <main className="sites-overview">
-    <header className="sites-heading"><h1>All projects</h1>
+    <header className="sites-heading"><h1>Projects</h1>
       <div className="sites-actions">
         {browserSite&&!imported&&<button type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('import')}}>Import browser site</button>}
-        <button className="primary" type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('new')}}>New site</button>
+        <button className="primary" type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('new')}}><Icon name="plus"/>New site</button>
       </div>
     </header>
     {form&&<form className="site-create" onSubmit={create}>
@@ -105,14 +106,14 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
     </form>}
     {error&&<p role="alert">{error} {!sites&&<button type="button" onClick={()=>{setError('');setAttempt(value=>value+1)}}>Retry</button>}</p>}
     {!sites&&!error&&<p role="status">Loading sites…</p>}
-    {sites?.length===0&&<p>No saved sites yet.</p>}
+    {sites?.length===0&&!form&&<div className="sites-empty"><Icon name="building" size={26}/><h2>No saved sites yet</h2><p>Create a site to start a model.</p></div>}
     <div className="sites-grid">
       {sites?.map(item=>{
         const location=siteLocation(item.project)
         return <button className="site-card" key={item.id} onClick={()=>setSite(item)}>
           <Preview project={item.project}/>
-          <span className="site-card-details"><strong>{item.name}</strong><small>{location?
-            `${location.lat.toFixed(5)}°, ${location.lon.toFixed(5)}°`:'No mapped boundary yet'}</small></span>
+          <span className="site-card-details"><span><strong>{item.name}</strong><small>{location?
+            `${location.lat.toFixed(5)}°, ${location.lon.toFixed(5)}°`:'No mapped boundary yet'}</small></span><Icon name="right" size={16}/></span>
         </button>
       })}
     </div>
