@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
-import { blockTypes, blockStoreys, adjustSetback, editGroundFrontage, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, meetsDwellingCeiling, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
+import { blockTypes, blockStoreys, adjustSetback, editGroundFrontage, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
 import { draw, fitCamera, home, initialLayers, projection, type Camera, type LegendEntry } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadAerial,mapboxToken,type AerialTile} from './aerial'
@@ -10,7 +10,7 @@ import {defaultAddress,isDefaultAddress,siteLocation} from './project'
 import {SiteWorkspace,saveSite,type Site} from './sites'
 import {SchedulePage} from './schedule'
 import {apartmentLayout,apartmentSettings,areaTarget,defaultApartmentOptions,type ApartmentOptions} from './apartment'
-import {dwellingTypes,ndss,ndssVersion,ndssCeiling} from './ndss'
+import {dwellingTypes,ndss,ndssVersion} from './ndss'
 import './style.css'
 
 type Tool=BlockType|'select'|'boundary'|'move'|'rotate'|'measure'|'vertices'|'ghost'|'show'
@@ -56,6 +56,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const houseHeights=project.houseHeights??defaultHouseHeights
   const [tool,setTool]=useState<Tool>('select')
   const [plan,setPlan]=useState(false)
+  const [touchPan,setTouchPan]=useState(false)
   const [floor,setFloor]=useState(0)
   const [revealedBlock,setRevealedBlock]=useState<string|null>(null)
   const showFloorplates=!!selected&&revealedBlock===selected.id
@@ -129,34 +130,11 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const settings=apartmentSettings(project)
   const selectedLayout=selected?apartmentLayout(selected,project):undefined
   const selectedUnits=selectedLayout?.ok?selectedLayout.floors.flatMap(f=>f.units):[]
-  const warnings=project.blocks.flatMap(b=>blockStats(b,project).outside?[b.name+' extends beyond the site boundary.']:[])
-  const higherRiskBlocks=new Set<string>()
-  for(const block of project.blocks){
-    if(block.type==='house'){
-      const storeys=houseStoreys(block)
-      const fraction=(Number(meetsDwellingCeiling(houseHeights.ground))+(storeys-1)*Number(meetsDwellingCeiling(houseHeights.upper)))/storeys
-      if(fraction<ndssCeiling.areaFraction)warnings.push(block.name+' · Estimated 2.3 m clear ceiling height covers '+format(fraction*100)+'% of house GIA. NDSS requires at least 75%.')
-    }else if(block.type==='apartment'){
-      const shortFloors=levels(block).map((level,i,all)=>meetsDwellingCeiling(level-(all[i-1]??0))?null:i===0?'ground':String(i)).filter(f=>f!==null)
-      if(shortFloors.length)warnings.push(block.name+' · Apartment ceiling height is estimated below 2.3 m on floor(s) '+shortFloors.join(', ')+'. NDSS requires 2.3 m across at least 75% of each dwelling’s GIA.')
-    }
-  }
-  for(const block of project.blocks){
+  const summary=useMemo(()=>selected?development({...project,blocks:[selected]}):totals,[selected,project,totals])
+  const higherRiskBlocks=useMemo(()=>new Set(project.blocks.flatMap(block=>{
     const layout=apartmentLayout(block,project)
-    if(!layout)continue
-    if(!layout.ok){warnings.push(block.name+' · '+layout.reason);continue}
-    const travelLimit=layout.hrb?settings.hrbTravel:settings.nonHrbTravel
-    layout.floors.forEach((layoutFloor,index)=>{
-      if(layoutFloor.travel>travelLimit+.00001)warnings.push(block.name+' · Floor '+index+' single-direction travel '+format(layoutFloor.travel,1)+' m exceeds '+travelLimit+' m.')
-      if(layoutFloor.betweenCores>settings.betweenCoreTravel+.00001)warnings.push(block.name+' · Floor '+index+' travel between cores '+format(layoutFloor.betweenCores,1)+' m exceeds '+settings.betweenCoreTravel+' m.')
-    })
-    if(layout.hrb){
-      higherRiskBlocks.add(block.id)
-      warnings.push(block.name+' · Indicative higher-risk building threshold met ('+block.floors+' storeys; top floor '+format(layout.topStoreyHeight,1)+' m above datum).')
-    }
-  }
-  if(totals.gia===null)warnings.push('GIA is unavailable where an internal footprint cannot be calculated.')
-  if(project.boundary.length<3)warnings.unshift('Draw a site boundary to check containment.')
+    return layout?.ok&&layout.hrb?[block.id]:[]
+  })),[project])
   const storyCount=Math.max(1,...project.blocks.map(floors))
   const reportSave=useEffectEvent((savedSite:Site)=>onSaved(savedSite))
   useEffect(()=>{
@@ -298,8 +276,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     setGuide(result.guide)
     return result.point
   }
-  function navigationAction(buttons:number){
-    return plan||(buttons&2)!==0?'pan':'orbit'
+  function navigationAction(buttons:number,touch=false){
+    return plan||(buttons&2)!==0||touch&&touchPan?'pan':'orbit'
   }
   function start(e:PointerEvent<HTMLCanvasElement>){
     drawingClick.current=null
@@ -309,8 +287,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     const screen=viewPoint(e),point=geometry().invert(screen)
     const clicked=scene.current.pick(screen)
     let action:Drag['action']='draw',id=selection,vertex=-1
-    if(e.button!==0){action=navigationAction(e.buttons)}
-    else if(tool==='ghost'||tool==='show')action=navigationAction(e.buttons)
+    if(e.button!==0){action=navigationAction(e.buttons,e.pointerType==='touch')}
+    else if(tool==='ghost'||tool==='show')action=navigationAction(e.buttons,e.pointerType==='touch')
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
     else if(tool==='select'||tool==='vertices'){
       let distance=12
@@ -320,7 +298,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         const next=length(screen,handle)
         if(next<distance){distance=next;vertex=i}
       })
-      action=vertex>=0?(setbackHandles.length?'setback':'vertices'):scene.current.heightAt(screen)?'height':navigationAction(e.buttons)
+      action=vertex>=0?(setbackHandles.length?'setback':'vertices'):scene.current.heightAt(screen)?'height':navigationAction(e.buttons,e.pointerType==='touch')
       if(tool==='vertices')id=null
     }
     drag.current={screen,point,camera,project,id,action,vertex,changed:false,last:screen,navigation:e.button!==0,floor:selectedFloor}
@@ -334,7 +312,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(d&&(e.buttons&6)){
       d.navigation=true
       setGuide(undefined)
-      const navigation=navigationAction(e.buttons)
+      const navigation=navigationAction(e.buttons,e.pointerType==='touch')
       if(d.action!==navigation){
         d.screen=d.last
         d.camera=camera
@@ -582,8 +560,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       <div className="top-actions">
         {saveError?<button className="save" title={saveError} onClick={()=>setRetry(count=>count+1)}><Icon name="warning" size={15}/>Retry save</button>:
           <span className="save" role="status"><Icon name={saved?'check':'download'} size={15}/>{saved?'Saved to cloud':'Saving…'}</span>}
-        <Button icon="chart" kind="open-schedule" onClick={()=>{setMenu(null);setShowSchedule(true)}}>Schedule</Button>
-        <div className="menu-anchor"><Button icon="download" kind="export" onClick={()=>setOption('export')}>Export<Icon name="chevron" size={13}/></Button>
+        <Button icon="chart" kind="open-schedule" title="Schedule" onClick={()=>{setMenu(null);setShowSchedule(true)}}>Schedule</Button>
+        <div className="menu-anchor"><Button icon="download" kind="export" title="Export" onClick={()=>setOption('export')}>Export<Icon name="chevron" size={13}/></Button>
           {menu==='export'&&<div className="popover export-menu"><button onClick={()=>download('csv')}>Development schedule <small>CSV</small></button><button onClick={()=>download('json')}>Project data <small>JSON</small></button></div>}
         </div>
       </div>
@@ -617,6 +595,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         <div className="tool-divider history"><Button icon="undo" kind="square" title="Undo" disabled={!history.past.length} onClick={undo}/><Button icon="redo" kind="square" title="Redo" disabled={!history.future.length} onClick={redo}/></div>
       </div>
       <div className="view-actions">
+        {!plan&&<Button icon="move" kind="tool touch-pan" title="Touch pan" active={touchPan} onClick={()=>{setTouchPan(!touchPan);choose('select')}}>Pan</Button>}
         <div className="segmented"><Button icon="cube" active={!plan} onClick={()=>switchView(false)}>3D</Button><Button icon="plan" active={plan} onClick={()=>switchView(true)}>Plan</Button></div>
         <div className="menu-anchor">
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
@@ -695,28 +674,29 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       </section>
       <aside className="sidebar" aria-label="Project inspector">
         <div className="overview">
-          <div className="heading"><h1>Overview</h1></div>
+          <div className="heading"><h1>{selected?.name??'Overview'}</h1>{selected&&<button type="button" className="secondary" onClick={()=>{choose('select');revealBlock(null);setEditFloor(0)}}>Clear selection</button>}</div>
           <div className="summary-grid" aria-live="polite">
-            <div><span>Homes</span><strong>{totals.homes===null?'—':format(totals.homes)}</strong></div>
-            <div><span title="Dwellings per hectare">Density</span><strong>{totals.site&&totals.density!==null?format(totals.density,1):'—'} <small>dph</small></strong></div>
+            <div><span>Homes</span><strong>{summary.homes===null?'—':format(summary.homes)}</strong></div>
+            {selected?<div><span>GIA</span><strong>{summary.gia===null?'—':format(summary.gia)}</strong><small>m²</small></div>:
+              <div><span title="Dwellings per hectare">Density</span><strong>{totals.site&&totals.density!==null?format(totals.density,1):'—'} <small>dph</small></strong></div>}
             <div title="Net dwelling area ÷ gross internal area of modelled houses and subdivided apartment blocks">
-              <span>Efficiency</span><strong>{totals.efficiency===null?'—':format(totals.efficiency,1)+'%'}</strong><small>NIA / GIA</small>
+              <span>Efficiency</span><strong>{summary.efficiency===null?'—':format(summary.efficiency,1)+'%'}</strong><small>NIA / GIA</small>
             </div>
           </div>
-          <p className="summary-note">{format(totals.houses)} houses · {totals.estimatedApartments===null?'Apartment estimate unavailable':format(totals.estimatedApartments??0)+' estimated apartments'}{totals.generatedApartments>0?' · '+format(totals.generatedApartments)+' subdivided apartments':''}</p>
-          <div className="yield-setting">
+          {(!selected||selected.type==='house'||selected.type==='apartment')&&<p className="summary-note">{format(summary.houses)} houses · {summary.estimatedApartments===null?'Apartment estimate unavailable':format(summary.estimatedApartments??0)+' estimated apartments'}{summary.generatedApartments>0?' · '+format(summary.generatedApartments)+' subdivided apartments':''}</p>}
+          {(!selected||selected.type==='apartment'&&!selectedLayout?.ok)&&<div className="yield-setting">
             <NumberField label="Apartment GIA per home" value={totals.apartmentAreaPerHome} min={1} step={.1} unit="m²"
               update={apartmentAreaPerHome=>{
                 if(apartmentAreaPerHome!==totals.apartmentAreaPerHome)commit({...project,apartmentAreaPerHome})
               }}/>
-          </div>
-          <h2 className="gia-heading">GIA by use</h2>
+          </div>}
+          {!selected&&<><h2 className="gia-heading">GIA by use</h2>
           <dl className="gia-breakdown" aria-live="polite">
             {(['house','apartment','office','pbsa'] as const).map(type=><div key={type}>
               <dt>{blockTypes[type].legend}</dt>
               <dd>{totals.giaByUse[type]===null?'—':format(totals.giaByUse[type])+' m²'}</dd>
             </div>)}
-          </dl>
+          </dl></>}
         </div>
         <div className="block-list">
           <h2 className="section-label">Buildings{project.blocks.length>0&&<span>{project.blocks.length}</span>}</h2>
@@ -832,9 +812,6 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
             </table>
             <p className="summary-note">Three-storey area targets are shared with apartments. Two-storey terraces use their own NDSS area minimums.</p>
           </section>
-        </Panel>
-        <Panel title="Warnings" icon="warning" count={warnings.length} initial={false}>
-          <div className="warnings">{warnings.length?warnings.map(w=><p key={w}><Icon name="warning" size={14}/>{w}</p>):<p><Icon name="check" size={14}/>All blocks within the site boundary.</p>}</div>
         </Panel>
       </aside>
     </main>

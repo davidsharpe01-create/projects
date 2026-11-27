@@ -106,11 +106,8 @@ h1 { margin: 0; font-size: 34px; font-weight: 500; letter-spacing: -.055em; line
 .property-actions svg { width: 14px; height: 14px }
 .vertex-hint { margin-right: auto; color: var(--muted); font-size: 11px }
 .setback-picker { margin-top: 10px }
-.empty, .warnings { font-size: 12px; color: var(--muted); line-height: 1.45 }
-.warnings { margin: 8px 22px 12px }
-.empty, .warnings p { margin: 0 }
-.warnings p { display: flex; gap: 6px; align-items: start; margin-bottom: 7px }
-.warnings svg { flex-shrink: 0; color: var(--accent-dark) }
+.empty { font-size: 12px; color: var(--muted); line-height: 1.45 }
+.empty { margin: 0 }
 footer { z-index: 5; padding: 0 19px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted) }
 footer>div, .snap { display: flex; align-items: center; gap: 8px }
 .snap { white-space: nowrap; gap: 5px }
@@ -322,3 +319,27 @@ body:has(.sites-overview) { background: #f6f5f1; }
 .summary-grid > div { padding: 9px 7px; }
 .summary-grid strong { font-size: clamp(18px,2vw,23px); }
 .summary-grid > div > small { color: var(--muted); font-size: 9px; }
+
+.touch-pan { display: none; }
+@media (pointer: coarse) {
+  .touch-pan { display: inline-flex; }
+}
+@media screen and (max-width: 600px) {
+  .app { grid-template-rows: 56px 82px minmax(0,1fr) 34px; }
+  .toolbar { flex-direction: column; align-items: stretch; justify-content: center; }
+  .toolset, .view-actions { justify-content: space-between; }
+  .toolbar .tool, .toolbar .square, .toolbar .layer-button { min-width: 36px; height: 36px; }
+  .toolbar .segmented button { min-height: 30px; }
+  .app main { grid-template-rows: minmax(250px,48dvh) auto; }
+  .top-actions .open-schedule, .top-actions .export { font-size: 0; gap: 0; min-width: 36px; padding: 7px; }
+  .top-actions .open-schedule svg { display: block; }
+  .top-actions .export svg:not(:first-child) { display: none; }
+  .site-title { gap: 4px; }
+  .sites-overview { padding: 24px 16px; }
+  .sites-heading { row-gap: 14px; margin-bottom: 20px; }
+  .sites-grid { grid-template-columns: minmax(0,1fr); }
+  .site-create { align-items: stretch; }
+  .site-create label { width: 100%; }
+  .site-create input { display: block; width: 100%; margin: 6px 0 0; }
+  .site-create input, .field input, .location-menu input { font-size: 16px; }
+}

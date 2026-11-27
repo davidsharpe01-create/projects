@@ -95,13 +95,13 @@ export function SiteWorkspace({editor}:{editor:(site:Site,close:()=>void,saved:(
   return <main className="sites-overview">
     <header className="sites-heading"><h1>Projects</h1>
       <div className="sites-actions">
-        {browserSite&&!imported&&<button type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('import')}}>Import browser site</button>}
+        {browserSite&&!imported&&<button type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('import')}}>Import project</button>}
         <button className="primary" type="button" disabled={!sites||busy} onClick={()=>{setName('');setForm('new')}}><Icon name="plus"/>New site</button>
       </div>
     </header>
     {form&&<form className="site-create" onSubmit={create}>
       <label>Site name <input autoFocus value={name} onChange={event=>setName(event.target.value)} maxLength={100} required/></label>
-      <button className="primary" disabled={busy||!name.trim()}>{form==='import'?'Import site':'Create site'}</button>
+      <button className="primary" disabled={busy||!name.trim()}>{form==='import'?'Import project':'Create site'}</button>
       <button type="button" disabled={busy} onClick={()=>{setForm(undefined);setError('')}}>Cancel</button>
     </form>}
     {error&&<p role="alert">{error} {!sites&&<button type="button" onClick={()=>{setError('');setAttempt(value=>value+1)}}>Retry</button>}</p>}
