@@ -310,10 +310,6 @@ body:has(.sites-overview) { background: #f6f5f1; }
 .summary-grid strong { font-size: clamp(18px,2vw,23px); }
 .summary-grid > div > small { color: var(--muted); font-size: 9px; }
 
-.touch-pan { display: none; }
-@media (pointer: coarse) {
-  .touch-pan { display: inline-flex; }
-}
 @media screen and (max-width: 600px) {
   .app { grid-template-rows: 56px 82px minmax(0,1fr) 34px; }
   .toolbar { flex-direction: column; align-items: stretch; justify-content: center; }

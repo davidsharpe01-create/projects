@@ -57,7 +57,6 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const houseHeights=project.houseHeights??defaultHouseHeights
   const [tool,setTool]=useState<Tool>('select')
   const [plan,setPlan]=useState(false)
-  const [touchPan,setTouchPan]=useState(false)
   const [floor,setFloor]=useState(0)
   const [revealedBlock,setRevealedBlock]=useState<string|null>(null)
   const showFloorplates=!!selected&&revealedBlock===selected.id
@@ -127,7 +126,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const scene=useRef<ReturnType<typeof draw>>({legend:[],pick:()=>null,pickContext:()=>undefined,pickGhost:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
   const touches=useRef(new Map<number,Point>())
-  const pinch=useRef<{camera:Camera;centre:Point;distance:number}|null>(null)
+  const pinch=useRef<{camera:Camera;centre:Point;distance:number;angle:number}|null>(null)
   const drawingClick=useRef<Point|null>(null)
   const totals=useMemo(()=>development(project),[project])
   const settings=apartmentSettings(project)
@@ -275,14 +274,14 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     setGuide(result.guide)
     return result.point
   }
-  function navigationAction(buttons:number,touch=false){
-    const pan=touch?touchPan:(buttons&1)!==0&&(buttons&2)===0
+  function navigationAction(buttons:number){
+    const pan=(buttons&1)!==0&&(buttons&2)===0
     return plan||pan?'pan':'orbit'
   }
   function touchPair(){
     const [a,b]=touches.current.values()
     if(!b)return
-    return {centre:[(a[0]+b[0])/2,(a[1]+b[1])/2] as Point,distance:Math.max(1,length(a,b))}
+    return {centre:[(a[0]+b[0])/2,(a[1]+b[1])/2] as Point,distance:Math.max(1,length(a,b)),angle:Math.atan2(b[1]-a[1],b[0]-a[0])}
   }
   function releaseTouch(e:PointerEvent<HTMLCanvasElement>){
     if(e.pointerType!=='touch')return false
@@ -312,8 +311,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     const screen=viewPoint(e),point=geometry().invert(screen)
     const clicked=scene.current.pick(screen)
     let action:Drag['action']='draw',id=selection,vertex=-1
-    if(e.button!==0){action=navigationAction(e.buttons,e.pointerType==='touch')}
-    else if(tool==='ghost'||tool==='show')action=navigationAction(e.buttons,e.pointerType==='touch')
+    if(e.button!==0){action=navigationAction(e.buttons)}
+    else if(tool==='ghost'||tool==='show')action=e.pointerType==='touch'?'draw':navigationAction(e.buttons)
     else if(tool==='move'||tool==='rotate'){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
     else if(tool==='select'||tool==='vertices'){
       let distance=12
@@ -323,7 +322,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         const next=length(screen,handle)
         if(next<distance){distance=next;vertex=i}
       })
-      action=vertex>=0?(setbackHandles.length?'setback':'vertices'):scene.current.heightAt(screen)?'height':navigationAction(e.buttons,e.pointerType==='touch')
+      action=vertex>=0?(setbackHandles.length?'setback':'vertices'):scene.current.heightAt(screen)?'height':e.pointerType==='touch'?'draw':navigationAction(e.buttons)
       if(tool==='vertices')id=null
     }
     drag.current={screen,point,camera,project,id,action,vertex,changed:false,last:screen,navigation:e.button!==0,floor:selectedFloor}
@@ -335,7 +334,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       touches.current.set(e.pointerId,screen)
       if(pinch.current){
         const pair=touchPair(),initial=pinch.current
-        if(pair)setCamera(zoomCamera(initial.camera,pair.distance/initial.distance,initial.centre,pair.centre))
+        if(pair)setCamera(zoomCamera(initial.camera,pair.distance/initial.distance,initial.centre,pair.centre,plan?0:pair.angle-initial.angle))
         return
       }
     }
@@ -346,7 +345,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(d&&(e.buttons&6)){
       d.navigation=true
       setGuide(undefined)
-      const navigation=navigationAction(e.buttons,e.pointerType==='touch')
+      const navigation=navigationAction(e.buttons)
       if(d.action!==navigation){
         d.screen=d.last
         d.camera=camera
@@ -521,13 +520,15 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(e.detail===2)finish()
     else if(e.detail<2)placePoint(screen)
   }
-  function zoomCamera(c:Camera,delta:number,anchor?:Point,destination=anchor):Camera{
+  function zoomCamera(c:Camera,delta:number,anchor?:Point,destination=anchor,twist=0):Camera{
     const zoom=Math.min(4,Math.max(Math.min(.38,c.zoom),c.zoom*delta))
-    if(!anchor||!destination)return {...c,zoom}
-    const ratio=zoom/c.zoom
-    const origin=projection(canvas.current!.clientWidth,canvas.current!.clientHeight,c,false).project([0,0])
-    return {...c,zoom,pan:[c.pan[0]+destination[0]-origin[0]-(anchor[0]-origin[0])*ratio,
-      c.pan[1]+destination[1]-origin[1]-(anchor[1]-origin[1])*ratio]}
+    const next={...c,zoom,angle:c.angle+twist}
+    if(!anchor||!destination)return next
+    const {clientWidth:w,clientHeight:h}=canvas.current!
+    // Plan uses the same anchor transform when there is no twist.
+    const world=projection(w,h,c,false).invert(anchor)
+    const screen=projection(w,h,next,false).project(world)
+    return {...next,pan:[c.pan[0]+destination[0]-screen[0],c.pan[1]+destination[1]-screen[1]]}
   }
   function zoom(delta:number,anchor?:Point){
     setCamera(c=>zoomCamera(c,delta,anchor))
@@ -634,7 +635,6 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         <div className="tool-divider history"><Button icon="undo" kind="square" title="Undo" disabled={!history.past.length} onClick={undo}/><Button icon="redo" kind="square" title="Redo" disabled={!history.future.length} onClick={redo}/></div>
       </div>
       <div className="view-actions">
-        {!plan&&<Button icon="move" kind="tool touch-pan" title="Touch pan" active={touchPan} onClick={()=>{setTouchPan(!touchPan);choose('select')}}>Pan</Button>}
         <div className="segmented"><Button icon="cube" active={!plan} onClick={()=>switchView(false)}>3D</Button><Button icon="plan" active={plan} onClick={()=>switchView(true)}>Plan</Button></div>
         <div className="menu-anchor">
           <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
@@ -855,7 +855,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, drag one finger to orbit in 3D, and use two fingers to pinch-zoom or pan. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, use one finger to edit. Pinch to zoom, slide two fingers to pan, and twist two fingers to rotate in 3D. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
