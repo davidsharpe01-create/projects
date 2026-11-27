@@ -126,6 +126,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const [legend,setLegend]=useState<LegendEntry[]>([])
   const scene=useRef<ReturnType<typeof draw>>({legend:[],pick:()=>null,pickContext:()=>undefined,pickGhost:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
+  const touches=useRef(new Map<number,Point>())
+  const pinch=useRef<{camera:Camera;centre:Point;distance:number}|null>(null)
   const drawingClick=useRef<Point|null>(null)
   const totals=useMemo(()=>development(project),[project])
   const settings=apartmentSettings(project)
@@ -277,8 +279,33 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     const pan=touch?touchPan:(buttons&1)!==0&&(buttons&2)===0
     return plan||pan?'pan':'orbit'
   }
+  function touchPair(){
+    const [a,b]=touches.current.values()
+    if(!b)return
+    return {centre:[(a[0]+b[0])/2,(a[1]+b[1])/2] as Point,distance:Math.max(1,length(a,b))}
+  }
+  function releaseTouch(e:PointerEvent<HTMLCanvasElement>){
+    if(e.pointerType!=='touch')return false
+    touches.current.delete(e.pointerId)
+    if(!pinch.current)return false
+    if(!touches.current.size)pinch.current=null
+    else if(touches.current.size>=2)pinch.current={camera,...touchPair()!}
+    return true
+  }
   function start(e:PointerEvent<HTMLCanvasElement>){
     drawingClick.current=null
+    if(e.pointerType==='touch'){
+      touches.current.set(e.pointerId,viewPoint(e))
+      if(touches.current.size>1||pinch.current){
+        e.currentTarget.setPointerCapture(e.pointerId)
+        if(touches.current.size===2)pinch.current={camera,...touchPair()!}
+        drag.current=null
+        setPreview(null)
+        setGuide(undefined)
+        setPointer(null)
+        return
+      }
+    }
     if(e.button>2)return
     if(e.button!==0)e.preventDefault()
     setMenu(null)
@@ -303,7 +330,16 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   function move(e:PointerEvent<HTMLCanvasElement>){
-    const screen=viewPoint(e),d=drag.current
+    const screen=viewPoint(e)
+    if(e.pointerType==='touch'&&touches.current.has(e.pointerId)){
+      touches.current.set(e.pointerId,screen)
+      if(pinch.current){
+        const pair=touchPair(),initial=pinch.current
+        if(pair)setCamera(zoomCamera(initial.camera,pair.distance/initial.distance,initial.centre,pair.centre))
+        return
+      }
+    }
+    const d=drag.current
     if(drawTool||tool==='measure'){
       if(!(e.buttons&6))setPointer(drawingPoint(screen))
     }
@@ -418,6 +454,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     setPreview({...d.project,blocks:d.project.blocks.map(b=>b===block?{...b,line}:b)})
   }
   function end(e:PointerEvent<HTMLCanvasElement>){
+    if(releaseTouch(e))return
     const d=drag.current;drag.current=null
     if(!d)return
     setGuide(undefined)
@@ -484,14 +521,16 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(e.detail===2)finish()
     else if(e.detail<2)placePoint(screen)
   }
+  function zoomCamera(c:Camera,delta:number,anchor?:Point,destination=anchor):Camera{
+    const zoom=Math.min(4,Math.max(Math.min(.38,c.zoom),c.zoom*delta))
+    if(!anchor||!destination)return {...c,zoom}
+    const ratio=zoom/c.zoom
+    const origin=projection(canvas.current!.clientWidth,canvas.current!.clientHeight,c,false).project([0,0])
+    return {...c,zoom,pan:[c.pan[0]+destination[0]-origin[0]-(anchor[0]-origin[0])*ratio,
+      c.pan[1]+destination[1]-origin[1]-(anchor[1]-origin[1])*ratio]}
+  }
   function zoom(delta:number,anchor?:Point){
-    setCamera(c=>{
-      const zoom=Math.min(4,Math.max(Math.min(.38,c.zoom),c.zoom*delta))
-      if(!anchor)return {...c,zoom}
-      const ratio=zoom/c.zoom
-      const origin=projection(canvas.current!.clientWidth,canvas.current!.clientHeight,c,false).project([0,0])
-      return {...c,zoom,pan:[c.pan[0]+(anchor[0]-origin[0])*(1-ratio),c.pan[1]+(anchor[1]-origin[1])*(1-ratio)]}
-    })
+    setCamera(c=>zoomCamera(c,delta,anchor))
   }
   function fitModel(){
     const {clientWidth,clientHeight}=canvas.current!
@@ -503,7 +542,9 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       e.preventDefault()
       if(!e.deltaY)return
       const rect=node!.getBoundingClientRect()
-      zoom(e.deltaY<0?1.12:1/1.12,[e.clientX-rect.left,e.clientY-rect.top])
+      const pixels=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?node!.clientHeight:1)
+      const factor=Math.exp(-Math.max(-180,Math.min(180,pixels))*.002)
+      zoom(factor,[e.clientX-rect.left,e.clientY-rect.top])
     }
     node?.addEventListener('wheel',wheel,{passive:false})
     return()=>node?.removeEventListener('wheel',wheel)
@@ -613,7 +654,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     <main>
       <section className="workspace" aria-label="Site workspace">
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
-          onPointerDown={start} onPointerMove={move} onPointerUp={end} onClick={clickCanvas} onPointerCancel={()=>{drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
+          onPointerDown={start} onPointerMove={move} onPointerUp={end} onClick={clickCanvas} onPointerCancel={e=>{if(releaseTouch(e))return;drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
           onAuxClick={e=>{if(e.button===1)e.preventDefault()}} onContextMenu={e=>e.preventDefault()}/>
         <div className="map-right">
           <button className="compass" type="button" title="Reset view to north" onClick={()=>setCamera({...home,angle:0})}>
@@ -810,7 +851,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Scroll to zoom around the cursor. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, drag one finger to orbit in 3D, and use two fingers to pinch-zoom or pan. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
