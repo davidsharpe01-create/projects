@@ -48,6 +48,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const [history,setHistory]=useState(()=>({past:[] as Project[],current:site.project,future:[] as Project[]}))
   const project=history.current
   const [showSchedule,setShowSchedule]=useState(false)
+  const [showInspector,setShowInspector]=useState(false)
   const atDefault=isDefaultAddress(project.anchor)
   const location=siteLocation(project)
   const [selection,setSelection]=useState<string|null>(null)
@@ -669,9 +670,11 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         </>}
         <div className="map-scale"><span>{scaleMetres} m</span><i style={{width:scaleMetres*scale}}/></div>
       </section>
-      <aside className="sidebar" aria-label="Project inspector">
+      <aside className={'sidebar'+(showInspector?' inspector-expanded':'')} aria-label="Project inspector">
         <div className="overview">
-          <div className="heading"><div><h1>{selected?.name??'Overview'}</h1>{selected&&<p className="block-typology">{blockTypes[selected.type].label}{selectedLayout?.ok&&selectedLayout.hrb?' (HRB)':''}</p>}</div>{selected&&<button type="button" className="secondary" onClick={()=>{choose('select');revealBlock(null);setEditFloor(0)}}>Clear selection</button>}</div>
+          <div className="heading"><div><h1>{selected?.name??'Overview'}</h1>{selected&&<p className="block-typology">{blockTypes[selected.type].label}{selectedLayout?.ok&&selectedLayout.hrb?' (HRB)':''}</p>}</div>{selected&&<button type="button" className="secondary" onClick={()=>{choose('select');revealBlock(null);setEditFloor(0)}}>Clear selection</button>}
+            <button type="button" className="inspector-toggle" aria-expanded={showInspector} aria-label={showInspector?'Collapse overview':'Expand overview'} onClick={()=>setShowInspector(!showInspector)}><Icon name="chevron" size={16}/></button>
+          </div>
           <div className="summary-grid" aria-live="polite">
             <div><span>Homes</span><strong>{summary.homes===null?'—':format(summary.homes)}</strong></div>
             {selected?<div><span>GIA</span><strong>{summary.gia===null?'—':format(summary.gia)}</strong><small>m²</small></div>:

@@ -319,7 +319,6 @@ body:has(.sites-overview) { background: #f6f5f1; }
   .toolset, .view-actions { justify-content: space-between; }
   .toolbar .tool, .toolbar .square, .toolbar .layer-button { min-width: 36px; height: 36px; }
   .toolbar .segmented button { min-height: 30px; }
-  .app main { grid-template-rows: minmax(250px,48dvh) auto; }
   .top-actions .open-schedule, .top-actions .export { font-size: 0; gap: 0; min-width: 36px; padding: 7px; }
   .top-actions .open-schedule svg { display: block; }
   .top-actions .export svg:not(:first-child) { display: none; }
@@ -331,4 +330,23 @@ body:has(.sites-overview) { background: #f6f5f1; }
   .site-create label { width: 100%; }
   .site-create input { display: block; width: 100%; margin: 6px 0 0; }
   .site-create input, .field input, .location-menu input { font-size: 16px; }
+}
+
+.inspector-toggle { display: none; }
+@media screen and (max-width: 700px) {
+  .app { min-height: 0; }
+  .app main { grid-template-rows: minmax(0,1fr) auto; overflow: hidden; }
+  .app .sidebar { max-height: min(54dvh, 440px); overflow: auto; overscroll-behavior: contain; z-index: 3; }
+  .sidebar .overview { margin: 0; padding: 6px 12px 8px; border: 0; border-radius: 0; box-shadow: none; }
+  .sidebar .heading { min-height: 36px; gap: 6px; }
+  .sidebar .heading h1 { font-size: 17px; letter-spacing: -.02em; }
+  .sidebar .block-typology { margin-top: 2px; font-size: 10px; }
+  .sidebar .summary-grid { margin-top: 2px; gap: 6px; }
+  .sidebar .summary-grid > div { gap: 3px; padding: 5px 7px; }
+  .sidebar .summary-grid span { font-size: 10px; }
+  .sidebar .summary-grid strong { font-size: 17px; }
+  .sidebar:not(.inspector-expanded) :is(.overview > .summary-note, .yield-setting, .gia-heading, .gia-breakdown, .panel, .heading > .secondary) { display: none; }
+  .sidebar:not(.inspector-expanded) .summary-grid > div:last-child > small { display: none; }
+  .inspector-toggle { display: inline-flex; margin-left: auto; width: 36px; height: 34px; border-radius: 50%; background: var(--paper); flex-shrink: 0; }
+  .inspector-toggle[aria-expanded="false"] svg { transform: rotate(180deg); }
 }
