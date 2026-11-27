@@ -126,7 +126,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const scene=useRef<ReturnType<typeof draw>>({legend:[],pick:()=>null,pickContext:()=>undefined,pickGhost:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
   const touches=useRef(new Map<number,Point>())
-  const pinch=useRef<{camera:Camera;centre:Point;distance:number;angle:number}|null>(null)
+  const pinch=useRef<{camera:Camera;centre:Point;distance:number;angle:number;verticalMode?:'tilt'|'pan'}|null>(null)
   const drawingClick=useRef<Point|null>(null)
   const totals=useMemo(()=>development(project),[project])
   const settings=apartmentSettings(project)
@@ -354,7 +354,17 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       touches.current.set(e.pointerId,screen)
       if(pinch.current){
         const pair=touchPair(),initial=pinch.current
-        if(pair)setCamera(zoomCamera(initial.camera,pair.distance/initial.distance,initial.centre,pair.centre,plan?0:pair.angle-initial.angle))
+        if(pair){
+          const [dx,dy]=pointDiff(pair.centre,initial.centre)
+          if(!initial.verticalMode&&Math.hypot(dx,dy)>9){
+            initial.verticalMode=!plan&&Math.abs(dy)>Math.abs(dx)*1.3?'tilt':'pan'
+          }
+          const tilting=initial.verticalMode==='tilt'
+          const destination:Point=tilting?[pair.centre[0],initial.centre[1]]:pair.centre
+          const tilt=tilting?Math.max(.24,Math.min(.99,initial.camera.tilt-dy*.003)):initial.camera.tilt
+          setCamera(zoomCamera(initial.camera,pair.distance/initial.distance,initial.centre,destination,
+            plan?0:pair.angle-initial.angle,tilt))
+        }
         return
       }
     }
@@ -540,9 +550,9 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(e.detail===2)finish()
     else if(e.detail<2)placePoint(screen)
   }
-  function zoomCamera(c:Camera,delta:number,anchor?:Point,destination=anchor,twist=0):Camera{
+  function zoomCamera(c:Camera,delta:number,anchor?:Point,destination=anchor,twist=0,tilt=c.tilt):Camera{
     const zoom=Math.min(4,Math.max(Math.min(.38,c.zoom),c.zoom*delta))
-    const next={...c,zoom,angle:c.angle+twist}
+    const next={...c,zoom,angle:c.angle+twist,tilt}
     if(!anchor||!destination)return next
     const {clientWidth:w,clientHeight:h}=canvas.current!
     // Plan uses the same anchor transform when there is no twist.
@@ -880,7 +890,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       <div>Local coordinates · metres</div>
       <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, use one finger to edit. Pinch to zoom, slide two fingers to pan, and twist two fingers to rotate in 3D. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, use one finger to edit. Pinch to zoom and twist two fingers to rotate in 3D. Swipe two fingers up to tilt toward an overhead view or down to lower the view. Start a two-finger drag sideways to pan in any direction. In Plan, slide two fingers to pan. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div></div>
     </footer>
   </div>
