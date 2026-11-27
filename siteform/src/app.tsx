@@ -699,6 +699,9 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
           <div className="summary-grid" aria-live="polite">
             <div><span>Homes</span><strong>{totals.homes===null?'—':format(totals.homes)}</strong></div>
             <div><span title="Dwellings per hectare">Density</span><strong>{totals.site&&totals.density!==null?format(totals.density,1):'—'} <small>dph</small></strong></div>
+            <div title="Net dwelling area ÷ gross internal area of modelled houses and subdivided apartment blocks">
+              <span>Efficiency</span><strong>{totals.efficiency===null?'—':format(totals.efficiency,1)+'%'}</strong><small>NIA / GIA</small>
+            </div>
           </div>
           <p className="summary-note">{format(totals.houses)} houses · {totals.estimatedApartments===null?'Apartment estimate unavailable':format(totals.estimatedApartments??0)+' estimated apartments'}{totals.generatedApartments>0?' · '+format(totals.generatedApartments)+' subdivided apartments':''}</p>
           <div className="yield-setting">
