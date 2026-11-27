@@ -676,8 +676,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
             <div><span>Homes</span><strong>{summary.homes===null?'—':format(summary.homes)}</strong></div>
             {selected?<div><span>GIA</span><strong>{summary.gia===null?'—':format(summary.gia)}</strong><small>m²</small></div>:
               <div><span title="Dwellings per hectare">Density</span><strong>{totals.site&&totals.density!==null?format(totals.density,1):'—'} <small>dph</small></strong></div>}
-            <div title="Net dwelling area ÷ gross internal area of modelled houses and subdivided apartment blocks">
-              <span>Efficiency</span><strong>{summary.efficiency===null?'—':format(summary.efficiency,1)+'%'}</strong><small>NIA / GIA</small>
+            <div title="Level 1 and above: net dwelling area ÷ gross internal area of modelled houses and subdivided apartment blocks">
+              <span>Efficiency (L1+)</span><strong>{summary.efficiency===null?'—':format(summary.efficiency,1)+'%'}</strong><small>NIA / GIA</small>
             </div>
           </div>
           {(!selected||selected.type==='house'||selected.type==='apartment')&&<p className="summary-note">{format(summary.houses)} houses · {summary.estimatedApartments===null?'Apartment estimate unavailable':format(summary.estimatedApartments??0)+' estimated apartments'}{summary.generatedApartments>0?' · '+format(summary.generatedApartments)+' subdivided apartments':''}</p>}

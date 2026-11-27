@@ -265,19 +265,25 @@ export function development(p:Project) {
   const houseMix:Record<HouseType,number>={'3B5P':0,'3B6P':0}
   let generatedApartments=0,estimatedGia:number|null=0
   let targetAchieving=0,generatedUsable=0,coreArea=0,corridorArea=0
-  let measuredGia:number|null=0
+  let upperNia=0,upperGia:number|null=0
+  function addUpperGia(floorAreas:ReturnType<typeof blockStats>['floorAreas']){
+    for(const {gia} of floorAreas.slice(1)){
+      upperGia=upperGia===null||gia===null?null:upperGia+gia
+    }
+  }
   const totals=p.blocks.reduce((total,b)=>{
     const s=blockStats(b,p)
     if(b.type==='house'){
-      measuredGia=measuredGia===null||s.gia===null?null:measuredGia+s.gia
+      addUpperGia(s.floorAreas)
+      upperNia+=s.usable*(floors(b)-1)/floors(b)
       mix[b.houseType]+=s.houses
       houseMix[b.houseType]+=s.houses
     }
     if(b.type==='apartment'){
       const layout=apartmentLayout(b,p)
       if(layout?.ok){
-        measuredGia=measuredGia===null||s.gia===null?null:measuredGia+s.gia
-        layout.floors.forEach(f=>{
+        addUpperGia(s.floorAreas)
+        layout.floors.forEach((f,level)=>{
           coreArea+=f.coreArea
           corridorArea+=f.corridorArea
           f.units.forEach(unit=>{
@@ -285,6 +291,7 @@ export function development(p:Project) {
             mix[unit.type]++
             apartmentMix[unit.type]++
             generatedUsable+=unit.area
+            if(level>0)upperNia+=unit.area
             if(unit.area+1e-7>=unit.target)targetAchieving++
           })
         })
@@ -302,7 +309,7 @@ export function development(p:Project) {
   const apartments=estimatedApartments===null?null:generatedApartments+estimatedApartments
   const homes=apartments===null?null:totals.houses+apartments
   return {...totals,giaByUse,apartmentAreaPerHome,estimatedApartments,generatedApartments,apartments,homes,site,mix,apartmentMix,houseMix,targetAchieving,generatedUsable,coreArea,corridorArea,
-    efficiency:measuredGia?(totals.usable+generatedUsable)*100/measuredGia:null,
+    efficiency:upperGia?upperNia*100/upperGia:null,
     density:homes===null?null:site?homes*10000/site:0,coverage:site?totals.footprint/site*100:0}
 }
 export function newBlock(project:Project,type:Block['type'],line:Point[]):Block {
