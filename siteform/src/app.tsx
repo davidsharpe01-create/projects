@@ -429,8 +429,8 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       const anchor=geometry(d.camera).invert(pivot)
       const touch=e.pointerType==='touch'
       const next={...d.camera,
-        angle:d.camera.angle+offset[0]*(touch?.004:-.004),
-        tilt:Math.min(touch?.99:.94,Math.max(.24,d.camera.tilt+offset[1]*(touch?-.003:.0025)))
+        angle:d.camera.angle-offset[0]*.004,
+        tilt:Math.min(touch?.99:.94,Math.max(.24,d.camera.tilt+offset[1]*(touch?.003:.0025)))
       }
       const [dx,dy]=pointDiff(pivot,geometry(next).project(anchor))
       setCamera({...next,pan:[next.pan[0]+dx,next.pan[1]+dy]})
