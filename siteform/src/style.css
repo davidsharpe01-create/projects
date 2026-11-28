@@ -55,11 +55,6 @@ canvas.drawing { cursor: crosshair }
 .map-right button { pointer-events: auto }
 .compass { width: 42px; height: 42px; display: grid; place-items: center; grid-template-rows: 13px 16px; padding-top: 3px; background: var(--white); border: 1px solid var(--line); font-weight: 600; font-size: 10px }
 .compass i { width: 11px; height: 16px; background: linear-gradient(var(--ink) 50%, #afa99f 50%); clip-path: polygon(50% 0,100% 100%,50% 76%,0 100%) }
-.map-controls { display: grid; background: var(--white); border: 1px solid var(--line) }
-.map-controls button { height: 34px; width: 34px }
-.map-controls button:hover { background: var(--paper) }
-.map-controls button+button { border-top: 1px solid var(--line) }
-.map-controls svg { width: 16px; height: 16px }
 .map-legend { position: absolute; left: 17px; bottom: 17px; max-width: calc(100% - 125px); display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 8px 10px; background: var(--white); border: 1px solid var(--line); font-size: 11px; pointer-events: none }
 .workspace:has(.mapbox-logo) .map-legend { bottom: 34px }
 .map-legend span { display: flex; align-items: center; gap: 6px; white-space: nowrap }
@@ -386,7 +381,6 @@ body:has(.sites-overview) { background: #f6f5f1; }
 .workspace-panel .toolbar { max-height: calc(100dvh - 122px); overflow: auto; }
 .workspace-panel .toolbar .popover { position: static; min-width: 0; width: 100%; box-shadow: none; }
 .workspace-panel .view-actions { flex-wrap: wrap; }
-.workspace-panel .view-actions .menu-anchor:has(.popover) { width: 100%; }
 .tool-preferences { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .tool-preferences .help:has(.popover) { width: 100%; }
 .app .sidebar {
@@ -443,7 +437,15 @@ body:has(.sites-overview) { background: #f6f5f1; }
   .app .context-status { max-width: 130px; }
 }
 .app .attribution { bottom: calc(var(--sheet-clearance) + 2px); }
-.app .map-controls { border-radius: 13px; box-shadow: var(--floating-shadow); }
 .inspector-details .panel-toggle { border-radius: 14px; }
 .inspector-details .panel-toggle[aria-expanded="true"] { border-radius: 14px 14px 0 0; }
 .inspector-details .panel-toggle[aria-expanded="true"]:hover { background: #faf9f6; }
+
+.workspace-panels .project-panel { max-width: calc(100% - 92px); }
+.workspace-layers { position: absolute; top: 0; right: 0; pointer-events: auto; z-index: 10; }
+.workspace-layers .layer-button {
+  width: auto; height: 42px; padding: 0 12px; border: 1px solid #ebe8e1; border-radius: 18px;
+  background: white; box-shadow: var(--floating-shadow); font-size: 13px; font-weight: 600;
+}
+.workspace-layers .layer-button.active { background: var(--accent-wash); }
+.workspace-layers .layers-menu { width: min(245px,calc(100vw - 2 * var(--panel-inset))); }

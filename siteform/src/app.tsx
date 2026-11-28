@@ -671,6 +671,19 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   return <>
   <div className={showSchedule?"app schedule-hidden-model":"app"} inert={showSchedule}>
     <div className="workspace-panels">
+        <div className="menu-anchor workspace-layers">
+          <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}>Layers</Button>
+          {menu==='layers'&&<div className="popover layers-menu">
+            <strong>Display layers</strong>
+            {([['context','Existing buildings'],['aerial','Aerial imagery'],['streets','Street names'],['travel','Travel distances'],['floorplates','All floorplates'],['grid','10 m grid']] as const).filter(([id])=>id==='aerial'?!!(anchor&&mapboxToken):id!=='context'&&id!=='streets'||!!anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
+              if(id==='aerial'&&!e.target.checked)setImagery(undefined)
+              setLayers({...layers,[id]:e.target.checked})
+              if(id==='context'&&!e.target.checked&&(tool==='ghost'||tool==='show'))choose('select')
+            }}/>{label}</label>)}
+            {ghosted.size>0&&<button type="button" onClick={()=>setGhosted(new Set())}>Restore all existing buildings</button>}
+            <label className="range">Massing opacity<input aria-label="Massing opacity" type="range" min=".25" max="1" step=".05" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/></label>
+          </div>}
+        </div>
     <details className="workspace-panel project-panel" open={openPanel==='project'}>
       <summary onClick={event=>{event.preventDefault();setMenu(null);setOpenPanel(open=>open==='project'?null:'project')}}><span>{site.name}</span><Icon name="chevron" size={16}/></summary>
       <div className="topbar">
@@ -720,19 +733,6 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       </div>
       <div className="view-actions">
         <div className="segmented"><Button icon="cube" active={!plan} onClick={()=>switchView(false)}>3D</Button><Button icon="plan" active={plan} onClick={()=>switchView(true)}>Plan</Button></div>
-        <div className="menu-anchor">
-          <Button icon="layers" title="Layers" kind="layer-button" active={menu==='layers'} onClick={()=>setOption('layers')}/>
-          {menu==='layers'&&<div className="popover layers-menu">
-            <strong>Display layers</strong>
-            {([['context','Existing buildings'],['aerial','Aerial imagery'],['streets','Street names'],['travel','Travel distances'],['floorplates','All floorplates'],['grid','10 m grid']] as const).filter(([id])=>id==='aerial'?!!(anchor&&mapboxToken):id!=='context'&&id!=='streets'||!!anchor).map(([id,label])=><label key={id}><input type="checkbox" checked={layers[id]} onChange={e=>{
-              if(id==='aerial'&&!e.target.checked)setImagery(undefined)
-              setLayers({...layers,[id]:e.target.checked})
-              if(id==='context'&&!e.target.checked&&(tool==='ghost'||tool==='show'))choose('select')
-            }}/>{label}</label>)}
-            {ghosted.size>0&&<button type="button" onClick={()=>setGhosted(new Set())}>Restore all existing buildings</button>}
-            <label className="range">Massing opacity<input aria-label="Massing opacity" type="range" min=".25" max="1" step=".05" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/></label>
-          </div>}
-        </div>
       </div>
       <div className="tool-preferences"><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
@@ -751,11 +751,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
           <button className="compass" type="button" title="Reset view to north" onClick={()=>setCamera({...home,angle:0})}>
             <span>N</span><i style={{transform:'rotate('+(plan?0:camera.angle)+'rad)'}}/>
           </button>
-          <div className="map-controls">
-            <Button icon="plus" title="Zoom in" onClick={()=>zoom(1.22)}/>
-            <Button icon="minus" title="Zoom out" onClick={()=>zoom(1/1.22)}/>
-            <Button icon="target" title="Fit model" onClick={fitModel}/>
-          </div>
+
         </div>
         {plan&&<label className="floor-picker">Floor
           <select value={shownFloor} onChange={e=>{
