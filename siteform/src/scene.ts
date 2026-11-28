@@ -126,7 +126,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   type Material={roof:string; walls:string[]; line:string; floor:string}
   const white:Material={roof:'#fffefd',walls:['#efefed','#dededc','#e8e8e6','#f5f5f3'],line:'#a09f9a',floor:'#c5c4bf'}
   const activeFloorMaterial:Material={
-    ...white,roof:'#dbeeff',walls:['#82bcea','#6ba9df','#78b2e5','#a2cff3'],line:editingBlue,floor:editingBlue
+    ...white,roof:'#edf6fc',walls:['#b6d4e7','#a5c8e1','#afcee4','#c1dcec'],line:editingBlue,floor:editingBlue
   }
   const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true,holes:Point[][]=[],triangles?:Point[][],contextIndex?:number,outlineOnly=false,layout?:ApartmentFloor,showTravel=false,wallOpacity?:number,showLayout=true,setbackEdges:SetbackEdge[]=[],interior?:Point[]|null)=>{
     const top=poly.map(p=>xy(p,z))
@@ -261,12 +261,12 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       storeys.forEach((top,i)=>{
         const base=b.level+(storeys[i-1]??0)
         const detail=validLayout?.floors[i]
-        const active=b.id===selected&&editFrontage&&i===editFloor
+        const active=b.id===selected&&editFrontage&&i>=editFloor
         const slab=active?activeFloorMaterial:white
         const edges=setbackEdges(i)
         for(const {outline,innerOutline} of outlines){
           const plate=floorOutline(b,outline,i)
-          face(plate,b.level+top,active?activeFloorMaterial:white,[],b.id,base,i,false,false,[],undefined,undefined,false,undefined,false,active ? .68 : .5)
+          face(plate,b.level+top,active?activeFloorMaterial:white,[],b.id,base,i,false,false,[],undefined,undefined,false,undefined,false,.5)
           const interior=detail?undefined:innerOutline??internalFloorOutline(plate)
           face(plate,base+.025,slab,[],b.id,base+.025,i,true,false,[],undefined,undefined,false,detail,i===storeys.length-1||edges.length>0,undefined,true,edges,interior)
           if(b.type!=='house'&&i===storeys.length-1)group=plate
@@ -284,7 +284,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
           const last=i===heights.length-1
           const edges=setbackEdges(i)
           const cap=last||edges.length>0
-          const active=i===editFloor&&b.id===selected&&editFrontage
+          const active=i>=editFloor&&b.id===selected&&editFrontage
           const colour=active?activeFloorMaterial:material
           face(poly,b.level+top,colour,[],b.id,b.level+(heights[i-1]??0),i,cap,last,[],undefined,undefined,false,cap?validLayout?.floors[i]:undefined,cap,undefined,false,edges)
           if(last)group=poly
@@ -295,7 +295,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
         face(outline,0,material,[],b.id,0,undefined,true,true,[],undefined,undefined,false,undefined,false,undefined,true,[],innerOutline)
       }
     }else{
-      polys.forEach(poly=>face(poly,z,material,levels(b,project.houseHeights),b.id,plan?0:b.level))
+      polys.forEach(poly=>face(poly,z,b.id===selected&&editFrontage?activeFloorMaterial:material,levels(b,project.houseHeights),b.id,plan?0:b.level))
     }
     if(surfaces.length>firstSurface&&!(plan&&validLayout?.floors[floor])){
       const label='Proposed buildings'
