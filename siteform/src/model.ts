@@ -72,8 +72,16 @@ function houseUnits(line:Point[],target:number,storeys:HouseStoreys) {
   const width=houseFrontage(storeys)
   const depth=depthFor(target,storeys)
   const clearDepth=depth-2*defaults.external
-  return line.slice(1).flatMap((end,i)=>{
-    const start=line[i],count=Math.floor((length(start,end)+1e-7)/width)
+  const runs:Point[]=[]
+  for(const point of line){
+    if(runs.length>=2){
+      const first=minus(runs.at(-1)!,runs.at(-2)!),next=minus(point,runs.at(-1)!)
+      if(Math.abs(cross(first,next))<1e-7&&first[0]*next[0]+first[1]*next[1]>0)runs.pop()
+    }
+    runs.push(point)
+  }
+  return runs.slice(1).flatMap((end,i)=>{
+    const start=runs[i],count=Math.floor((length(start,end)+1e-7)/width)
     return Array.from({length:count},(_,j)=>{
       const left=j===0?defaults.external:defaults.party/2
       const right=j===count-1?defaults.external:defaults.party/2

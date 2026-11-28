@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, 
 import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { blockTypes, blockStoreys, adjustSetback, editGroundFrontage, endDirection, endInset, levels, resizeStoreys, length, footprintSatisfies, footprints, frontage, floors, height, blockStats, development, newBlock, validPolygon, csv, houseFrontage, houseStoreys, defaultHouseHeights, minimumDwellingStoreyHeight, type HouseStoreys, type Block, type BlockType, type Point, type Project } from './model'
-import { draw, fitCamera, home, initialLayers, projection, type Camera, type LegendEntry } from './scene'
+import { draw, fitCamera, home, initialLayers, projection, type Camera } from './scene'
 import {snapAlong,snapAngle,snapEdges,snapPoint,type SnapGuide} from './snap'
 import {loadAerial,mapboxToken,type AerialTile} from './aerial'
 import {loadContext,emptyContext,type ContextData} from './context'
@@ -49,6 +49,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const project=history.current
   const [showSchedule,setShowSchedule]=useState(false)
   const [showInspector,setShowInspector]=useState(false)
+  const [addingVertex,setAddingVertex]=useState(false)
   const [openPanel,setOpenPanel]=useState<'project'|'tools'|null>(null)
   const sheetStart=useRef<number|null>(null)
   const sheetSwiped=useRef(false)
@@ -125,7 +126,6 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const setbackEdges=useMemo(()=>selectedFloor?snapEdges(project,selectedFloor):[],[project,selectedFloor])
   const [size,setSize]=useState(0)
   const canvas=useRef<HTMLCanvasElement>(null)
-  const [legend,setLegend]=useState<LegendEntry[]>([])
   const scene=useRef<ReturnType<typeof draw>>({legend:[],pick:()=>null,pickContext:()=>undefined,pickGhost:()=>undefined,handles:[],setbackHandles:[],pickFloor:()=>0,heightAt:()=>false})
   const drag=useRef<Drag|null>(null)
   const touches=useRef(new Map<number,Point>())
@@ -195,9 +195,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   useLayoutEffect(()=>{
     if(!canvas.current)return
     scene.current=draw(canvas.current,{activeHandle,showFloorplates,camera,plan,floor:Math.min(floor,storyCount-1),editFloor:selectedFloor,project:preview??project,selected:selection,draft,pointer,guide,layers,opacity,editFrontage:tool==='select',drawBuilding:isBuildingTool(tool),editBoundary:tool==='vertices',context:contextStatus?.data??emptyContext,aerial:aerial?.tiles??[],ghosted})
-    const entries=scene.current.legend
-    setLegend(previous=>previous.length===entries.length&&previous.every((item,i)=>
-      item.label===entries[i].label&&item.colour===entries[i].colour&&item.outline===entries[i].outline)?previous:entries)
+
   },[activeHandle,showFloorplates,camera,plan,floor,selectedFloor,project,preview,selection,draft,pointer,guide,size,layers,opacity,tool,contextStatus,aerial,ghosted])
   function commit(next:Project,trimUpper=false){
     for(const block of next.blocks){
@@ -218,7 +216,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   function undo(){setHistory(h=>h.past.length?{past:h.past.slice(0,-1),current:h.past.at(-1)!,future:[h.current,...h.future]}:h)}
   function redo(){setHistory(h=>h.future.length?{past:[...h.past,h.current],current:h.future[0],future:h.future.slice(1)}:h)}
   function choose(next:Tool){
-    setDraft([]);setGuide(undefined);setNotice('');setTool(next);setMenu(null)
+    setAddingVertex(false);setDraft([]);setGuide(undefined);setNotice('');setTool(next);setMenu(null)
     if(next!=='select')setEditFloor(0)
     if(next==='boundary'||isBuildingTool(next)||next==='measure'||next==='vertices')setFloor(0)
   }
@@ -288,9 +286,10 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const deleteFromKeyboard=useEffectEvent((event:KeyboardEvent)=>{
     if(showSchedule)return
     if(event.key==='Escape'&&pickedHandle.current){cancelPickedHandle();return}
+    if(event.key==='Escape'&&addingVertex){setAddingVertex(false);return}
     if(event.key!=='Delete'&&event.key!=='Backspace')return
     if(event.defaultPrevented||event.repeat||event.isComposing||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return
-    if(!selected||drag.current||menu||(tool!=='select'&&tool!=='move'&&tool!=='rotate'))return
+    if(!selected||addingVertex||drag.current||menu||(tool!=='select'&&tool!=='move'&&tool!=='rotate'))return
     const target=event.target
     if(target instanceof HTMLElement&&(target.isContentEditable||target.closest('input, textarea, select, [role="textbox"], [role="spinbutton"]')))return
     event.preventDefault()
@@ -366,7 +365,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(e.button!==0){action=navigationAction(e.buttons)}
     else if(tool==='ghost'||tool==='show')action=background
     else if((tool==='move'||tool==='rotate')&&(!touch||clicked)){id=clicked??selection;action=tool;if(clicked)setSelection(clicked)}
-    else if(tool==='select'||tool==='vertices'){
+    else if(!addingVertex&&(tool==='select'||tool==='vertices')){
       let distance=12
       const {handles,setbackHandles}=scene.current
       const grips=setbackHandles.length?setbackHandles:handles
@@ -571,10 +570,37 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     setSelection(id)
     setRevealedBlock(id)
   }
+  function addFrontageVertex(block:Block,screen:Point){
+    const {project:toScreen}=geometry()
+    const elevation=plan?0:block.level
+    let closest=16
+    let insertion:{index:number;point:Point}|undefined
+    for(let i=1;i<block.line.length;i++){
+      const a=block.line[i-1],b=block.line[i]
+      const from=toScreen(a,elevation),to=toScreen(b,elevation)
+      const [dx,dy]=pointDiff(to,from)
+      const squared=dx*dx+dy*dy
+      if(squared<1e-7)continue
+      const t=((screen[0]-from[0])*dx+(screen[1]-from[1])*dy)/squared
+      if(t<=0||t>=1)continue
+      const distance=length(screen,[from[0]+t*dx,from[1]+t*dy])
+      if(distance>=closest||Math.min(t,1-t)*length(a,b)<.1)continue
+      closest=distance
+      insertion={index:i,point:[a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])]}
+    }
+    if(!insertion){setNotice('Tap a frontage edge away from an existing vertex.');return}
+    const line=[...block.line]
+    line.splice(insertion.index,0,insertion.point)
+    if(updateBlock(editGroundFrontage(block,line))){
+      setAddingVertex(false)
+      setNotice('')
+    }
+  }
   function clickCanvas(e:MouseEvent<HTMLCanvasElement>){
     const screen=drawingClick.current
     drawingClick.current=null
     if(!screen)return
+    if(addingVertex&&selected){addFrontageVertex(selected,screen);return}
     if(tool==='select'){
       const handle=scene.current.handles.some(p=>length(p,screen)<12)||scene.current.setbackHandles.some(p=>length(p,screen)<12)
       if(handle)return
@@ -740,6 +766,10 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
             {Array.from({length:storyCount},(_,i)=><option key={i} value={i}>{i===0?'Ground':i}</option>)}
           </select>
         </label>}
+        {addingVertex&&<div className="draw-message">
+          <span>Tap the blue frontage to add a vertex.</span>
+          <Button icon="close" kind="square" title="Cancel adding vertex" onClick={()=>setAddingVertex(false)}/>
+        </div>}
         {actions[tool]&&<div className="draw-message">
           <span>{tool==='measure'&&draft.length===2?format(length(...draft as [Point,Point]),2)+' m':actions[tool]}</span>
           {tool==='house'&&<label className="house-storeys">Storeys <select value={drawHouseStoreys} onChange={e=>setDrawHouseStoreys(Number(e.target.value) as HouseStoreys)}><option value={2}>2 · 5.5 m</option><option value={3}>3 · 4.5 m</option></select></label>}
@@ -750,11 +780,6 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
           <Button icon="close" kind="square" title="Exit tool" onClick={()=>choose('select')}/>
         </div>}
         {notice&&<div className="notice" role="status">{notice}<Button icon="close" kind="square" title="Dismiss" onClick={()=>setNotice('')}/></div>}
-        {legend.length>0&&<div className="map-legend" aria-label="Map key">
-          {legend.map(({label,colour,outline})=><span key={label}>
-            <i style={outline?{borderColor:colour,borderStyle:'solid',borderWidth:1}:{background:colour}}/>{label}
-          </span>)}
-        </div>}
         {anchor&&(showContext||aerial)&&<>
           {showContext&&(contextStatus?.status!=='ready'||!(layers.context&&contextStatus.data.buildings.length||layers.streets&&contextStatus.data.streetNames.length))
             ?<div className="context-status" role="status">
@@ -883,6 +908,14 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
               </>:<button type="button" className="primary" onClick={()=>subdivide(selected)}>Subdivide into apartments</button>}
             </div>}
             <div className="property-actions">
+              <button type="button" className="secondary" onClick={()=>{
+                cancelPickedHandle()
+                choose('select')
+                setFloor(0)
+                setEditFloor(0)
+                setShowInspector(false)
+                setAddingVertex(true)
+              }}>Add vertex</button>
               {tool==='select'&&<span className="vertex-hint">{selectedFloor?'Drag either end to adjust this floor':selected.type!=='house'&&selected.floors>1?'Drag ground handles or click an upper floor for setbacks':'Drag frontage handles to edit'}</span>}
               <Button icon="copy" kind="square" title="Duplicate block" onClick={()=>duplicate(selected)}/>
               <Button icon="trash" kind="square" title="Delete block" onClick={remove}/>
