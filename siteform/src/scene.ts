@@ -125,6 +125,9 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   }
   type Material={roof:string; walls:string[]; line:string; floor:string}
   const white:Material={roof:'#fffefd',walls:['#efefed','#dededc','#e8e8e6','#f5f5f3'],line:'#a09f9a',floor:'#c5c4bf'}
+  const activeFloorMaterial:Material={
+    ...white,roof:'#dbeeff',walls:['#82bcea','#6ba9df','#78b2e5','#a2cff3'],line:editingBlue,floor:editingBlue
+  }
   const face=(poly:Point[],z:number,material:Material,storeys:number[],id?:string,base=0,storey?:number,cap=true,topRoof=true,holes:Point[][]=[],triangles?:Point[][],contextIndex?:number,outlineOnly=false,layout?:ApartmentFloor,showTravel=false,wallOpacity?:number,showLayout=true,setbackEdges:SetbackEdge[]=[],interior?:Point[]|null)=>{
     const top=poly.map(p=>xy(p,z))
     if(!plan&&z>base){
@@ -255,15 +258,15 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     if(stack&&polys[0]){
       const outlines=b.type==='house'?houseFloorplates(b,project.targets):[{outline:polys[0],innerOutline:undefined}]
       const storeys=levels(b,project.houseHeights)
-      const focused=Math.min(floor,storeys.length-1)
       storeys.forEach((top,i)=>{
         const base=b.level+(storeys[i-1]??0)
         const detail=validLayout?.floors[i]
-        const slab={...material,line:b.id===selected&&i===focused?editingBlue:white.line}
+        const active=b.id===selected&&editFrontage&&i===editFloor
+        const slab=active?activeFloorMaterial:white
         const edges=setbackEdges(i)
         for(const {outline,innerOutline} of outlines){
           const plate=floorOutline(b,outline,i)
-          face(plate,b.level+top,material,[],b.id,base,i,false,false,[],undefined,undefined,false,undefined,false,.5)
+          face(plate,b.level+top,active?activeFloorMaterial:white,[],b.id,base,i,false,false,[],undefined,undefined,false,undefined,false,active ? .68 : .5)
           const interior=detail?undefined:innerOutline??internalFloorOutline(plate)
           face(plate,base+.025,slab,[],b.id,base+.025,i,true,false,[],undefined,undefined,false,detail,i===storeys.length-1||edges.length>0,undefined,true,edges,interior)
           if(b.type!=='house'&&i===storeys.length-1)group=plate
@@ -273,7 +276,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       const heights=levels(b)
       if(plan){
         const poly=floorOutline(b,polys[0],floor)
-        face(poly,0,b.id===selected&&editFloor?{...material,line:editingBlue}:material,[],b.id,0,undefined,true,true,[],undefined,undefined,false,validLayout?.floors[floor],true,undefined,true,[],detailed&&!validLayout?.floors[floor]?internalFloorOutline(poly):undefined)
+        face(poly,0,b.id===selected&&editFrontage&&floor===editFloor?activeFloorMaterial:material,[],b.id,0,undefined,true,true,[],undefined,undefined,false,validLayout?.floors[floor],true,undefined,true,[],detailed&&!validLayout?.floors[floor]?internalFloorOutline(poly):undefined)
         group=poly
       }else{
         heights.forEach((top,i)=>{
@@ -281,9 +284,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
           const last=i===heights.length-1
           const edges=setbackEdges(i)
           const cap=last||edges.length>0
-          const colour=i>0&&i===editFloor&&b.id===selected&&editFrontage
-            ?{...material,walls:['#7fa9c0','#5b889f','#6b98ae','#91b4c6'],floor:'#dceaf0'}
-            :material
+          const active=i===editFloor&&b.id===selected&&editFrontage
+          const colour=active?activeFloorMaterial:material
           face(poly,b.level+top,colour,[],b.id,b.level+(heights[i-1]??0),i,cap,last,[],undefined,undefined,false,cap?validLayout?.floors[i]:undefined,cap,undefined,false,edges)
           if(last)group=poly
         })
@@ -457,7 +459,7 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       surface.contextIndex!==undefined&&scene.ghosted.has(surface.contextIndex)),point)?.contextIndex,
     setbackHandles,pickFloor:(point:Point)=>{
       const surface=visibleSurface(solidSurfaces,point)
-      return surface?.roof?0:surface?.floor??0
+      return surface?.floor??0
     },
     heightAt:(point:Point,handleOnly=false)=>!!heightHandle&&(length(point,heightHandle)<12||!handleOnly&&pickSurface(solidSurfaces,point,true)===selected)}
 }

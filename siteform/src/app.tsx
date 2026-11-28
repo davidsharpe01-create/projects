@@ -608,10 +608,11 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       const block=project.blocks.find(b=>b.id===hit)
       let hitFloor=0
       if(block&&hit===selection&&block.type!=='house'){
-        if(plan)hitFloor=shownFloor
-        else if(scene.current.pickFloor(screen)>0){
+        const clickedFloor=plan?shownFloor:scene.current.pickFloor(screen)
+        if(plan||selectedFloor>0)hitFloor=clickedFloor
+        else if(clickedFloor>0){
           const firstSetback=block.setbacks?.findIndex(([start,end],i)=>i>0&&i<block.floors&&(start>0||end>0))??-1
-          hitFloor=selectedFloor>0?Math.min(selectedFloor+1,block.floors-1):Math.max(1,firstSetback)
+          hitFloor=Math.max(1,firstSetback)
         }
       }
       revealBlock(hit)
@@ -743,7 +744,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       </div>
       <div className="tool-preferences"><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, drag one finger on the scene to orbit in 3D, or start on a handle to edit. Drag two fingers to pan and pinch to zoom. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Selecting a building opens its ground-floor frontage. Click an upper floor on the selected building to start at its lowest setback. Click again to step up a floor. Click or tap a handle to pick it up, then click or tap again to place it. You can also drag a handle directly. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, drag one finger on the scene to orbit in 3D, or start on a handle to edit. Drag two fingers to pan and pinch to zoom. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Selecting a building opens its ground-floor frontage. Click above ground to select the lowest setback, then click a specific floor to edit it. Blue shading shows the active floor. Click or tap a handle to pick it up, then click or tap again to place it. You can also drag a handle directly. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div>
       </div>
     </section>
