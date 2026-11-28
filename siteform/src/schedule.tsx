@@ -1,17 +1,17 @@
 import {apartmentLayout} from './apartment'
-import {area,blockStats,blockTypes,floors,type Project} from './model'
+import {area,blockStats,blockTypes,type Project} from './model'
 import {dwellingTypes} from './ndss'
 import {Icon} from './icons'
 
 const number=new Intl.NumberFormat('en-GB',{maximumFractionDigits:1})
 const format=(value:number|null)=>value===null?'—':number.format(value)
 
-type Measures={gea:number;gia:number|null;units:number;unitArea:number;commercial:number;communal:number;core:number;corridor:number}
-const empty:Measures={gea:0,gia:0,units:0,unitArea:0,commercial:0,communal:0,core:0,corridor:0}
+type Measures={gea:number;gia:number|null;units:number;nia:number|null;commercial:number;communal:number;core:number;corridor:number}
+const empty:Measures={gea:0,gia:0,units:0,nia:null,commercial:0,communal:0,core:0,corridor:0}
 function sum(rows:Measures[]):Measures {
   return rows.reduce((a,b)=>({
     gea:a.gea+b.gea,gia:a.gia===null||b.gia===null?null:a.gia+b.gia,
-    units:a.units+b.units,unitArea:a.unitArea+b.unitArea,commercial:a.commercial+b.commercial,
+    units:a.units+b.units,nia:a.nia===null&&b.nia===null?null:(a.nia??0)+(b.nia??0),commercial:a.commercial+b.commercial,
     communal:a.communal+b.communal,core:a.core+b.core,corridor:a.corridor+b.corridor
   }),empty)
 }
@@ -24,7 +24,6 @@ export function scheduleBlocks(project:Project){
       const plate=layout?.ok?layout.floors[i]:undefined
       return {...measure,
         units:plate?.units.length??(i===0?stats.houses:0),
-        unitArea:plate?.units.reduce((total,unit)=>total+unit.area,0)??stats.usable/floors(block),
         commercial:plate?.uses.filter(use=>use.kind==='commercial').reduce((total,use)=>total+area(use.outline),0)??0,
         communal:plate?.uses.filter(use=>use.kind==='communal').reduce((total,use)=>total+area(use.outline),0)??0,
         core:plate?.coreArea??0,corridor:plate?.corridorArea??0
@@ -36,14 +35,14 @@ export function scheduleBlocks(project:Project){
 
 const columns:{key:keyof Measures;label:string;unit:string}[]=[
   {key:'gea',label:'GEA',unit:'m²'},{key:'gia',label:'GIA',unit:'m²'},
-  {key:'unitArea',label:'Usable home area',unit:'m²'},{key:'commercial',label:'Commercial',unit:'m²'},
+  {key:'nia',label:'NIA',unit:'m²'},{key:'commercial',label:'Commercial',unit:'m²'},
   {key:'communal',label:'Communal',unit:'m²'},{key:'core',label:'Cores',unit:'m²'},
   {key:'corridor',label:'Corridors',unit:'m²'},{key:'units',label:'Homes',unit:'no.'}
 ]
 
 function ScheduleTable({label,heading,rows}:{label:string;heading:string;rows:{name:string;measures:Measures}[]}){
   const total=sum(rows.map(row=>row.measures))
-  const shown=columns.filter(({key})=>key==='gea'||key==='gia'||total[key]!==0)
+  const shown=columns.filter(({key})=>key==='gea'||key==='gia'||key==='nia'||total[key]!==0)
   const cells=(measures:Measures)=>shown.map(({key})=><td key={key}>{format(measures[key])}</td>)
   return <div className="schedule-table-wrap"><table aria-label={label}>
     <thead><tr><th scope="col">{heading}</th>{shown.map(({key,label,unit})=><th scope="col" key={key}>{label}<small>{unit}</small></th>)}</tr></thead>
@@ -75,6 +74,7 @@ export function SchedulePage({name,project,totals,onBack}:{name:string;project:P
       <div><dt>Homes</dt><dd>{format(totals.homes)}</dd></div>
       <div><dt>Density</dt><dd>{totals.site?format(totals.density):'—'} <small>dph</small></dd></div>
       <div><dt>Gross internal area</dt><dd>{format(totals.gia)} <small>m²</small></dd></div>
+      <div><dt>Efficiency (L1+)</dt><dd>{totals.efficiency===null?'—':totals.efficiency.toFixed(1)+'%'}</dd></div>
       <div><dt>Site area</dt><dd>{totals.site?format(totals.site):'—'} <small>m²</small></dd></div>
     </dl>
     {!!totals.estimatedApartments&&<p className="schedule-estimate">Includes {format(totals.estimatedApartments)} estimated apartments.</p>}

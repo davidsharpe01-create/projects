@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { adjustSetback, editGroundFrontage, endInset, floorOutline, resizeStoreys, area, blockStats, csv, depthFor, development, footprints, footprintSatisfies, height, levels, meetsDwellingCeiling, length, newBlock, validPolygon } from '../src/model.ts'
 import { legacySample as sample, blankProject, restoreProject } from '../src/project.ts'
 import { geographicPoint, mapFrame } from '../src/geography.ts'
+import { apartmentLayout, defaultApartmentOptions } from '../src/apartment.ts'
 const near=(a:number,b:number)=>assert.ok(Math.abs(a-b)<1e-7,`${a} ≠ ${b}`)
 
 test('sample has three editable, valid and contained blocks',()=>{
@@ -32,7 +33,7 @@ test('45 m frontage fits ten three-storey houses at uniform depth and measures e
       near(externalDepth,depthFor(target))
       near((externalDepth-1.2)*(measuredWidth-partyAllowances)*3,target*(measuredWidth-partyAllowances)/4.2)
     })
-    near(blockStats(block,sample).usable,8*target+2*target*3.75/4.2)
+    near(blockStats(block,sample).nia!,8*target+2*target*3.75/4.2)
   }
   near(depthFor(99),99/3/4.2+1.2)
 })
@@ -246,4 +247,22 @@ test('pulling an upper edge aligned to ground extends the footprint and flush fl
     assert.deepEqual(edited.setbacks,side?[[0,0],[0,0],[0,0],[0,9],[8,12]]:[[0,0],[0,0],[0,0],[0,4],[13,7]])
     assert.ok(footprintSatisfies(edited,sample.targets))
   }
+})
+
+test('NIA and efficiency use the same measured floor areas',()=>{
+  const project=blankProject()
+  const apartment={...newBlock(project,'apartment',[[0,0],[54,0]]),
+    apartmentLayout:defaultApartmentOptions,setbacks:[[0,0],[4,0]] as [number,number][]}
+  const office=newBlock(project,'office',[[75,0],[115,0]])
+  const layout=apartmentLayout(apartment,project)
+  assert.ok(layout?.ok)
+  const stats=blockStats(apartment,project)
+  assert.equal(stats.floorAreas[0].nia,0)
+  const upperNia=layout.floors.slice(1).flatMap(f=>f.units).reduce((sum,unit)=>sum+unit.area,0)
+  const upperGia=stats.floorAreas.slice(1).reduce((sum,f)=>sum+f.gia!,0)
+  assert.equal(blockStats(office,project).nia,null)
+  const mixed={...project,blocks:[apartment,office]}
+  near(development(mixed).nia!,upperNia)
+  near(development(mixed).efficiency!,100*upperNia/upperGia)
+  assert.match(csv(mixed),/"NIA \(m²\)".*"Efficiency \(L1\+\) \(%\)"/)
 })

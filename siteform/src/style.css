@@ -240,7 +240,7 @@ input[type=checkbox], input[type=range] { accent-color: var(--accent-dark) }
   .schedule-actions { display: none; }
   .schedule-heading { padding-bottom: 8px; }
   .schedule-heading h1 { font-size: 26pt; }
-  .schedule-metrics { margin: 10px 0 12px; break-inside: avoid; grid-template-columns: repeat(4, 1fr); }
+  .schedule-metrics { margin: 10px 0 12px; break-inside: avoid; grid-template-columns: repeat(5, 1fr); }
   .schedule-page section { margin-top: 13px; }
   .schedule-page h2, .schedule-page h3 { break-after: avoid; }
   .schedule-table-wrap { overflow: visible; }

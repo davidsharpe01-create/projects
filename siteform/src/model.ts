@@ -91,7 +91,7 @@ function houseUnits(line:Point[],target:number,storeys:HouseStoreys) {
         outline:rectangle(pointAlong(start,end,j*width),pointAlong(start,end,(j+1)*width),depth),
         innerOutline:rectangle(offset(front,end,defaults.external),offset(rear,start,-defaults.external),clearDepth),
         internalArea:internalWidth*clearDepth,
-        usableArea:(width-left-right)*clearDepth
+        nia:(width-left-right)*clearDepth
       }
     })
   })
@@ -250,20 +250,28 @@ export function blockStats(b:Block,p:Project) {
   const units=b.type==='house'?houseUnits(b.line.filter((p,i)=>!i||length(p,b.line[i-1])>.01),houseAreaTarget(b.houseType,houseStoreys(b),p.targets),houseStoreys(b)):null
   const outlines=units?units.map(unit=>unit.outline):footprints(b,p.targets)
   const footprint=outlines.reduce((sum,poly)=>sum+area(poly),0)
+  const layout=apartmentLayout(b,p)
+  const houseNia=units?.reduce((sum,unit)=>sum+unit.nia,0)
+  const houseGia=units?.reduce((sum,unit)=>sum+unit.internalArea,0)
   const floorAreas=levels(b).map((_,i)=>{
-    if(units)return {gea:footprint,gia:units.reduce((sum,unit)=>sum+unit.internalArea,0)}
-    if(!outlines[0])return {gea:0,gia:0}
+    const nia=houseNia??(layout?.ok?layout.floors[i].units.reduce((sum,unit)=>sum+unit.area,0):null)
+    if(houseGia!==undefined)return {gea:footprint,gia:houseGia,nia}
+    if(!outlines[0])return {gea:0,gia:0,nia}
     const polygon=floorOutline(b,outlines[0],i)
-    return {gea:area(polygon),gia:internalFloorArea(polygon)}
+    return {gea:area(polygon),gia:internalFloorArea(polygon),nia}
   })
+  const measured=floorAreas.filter(floor=>floor.nia!==null)
+  const nia=measured.length?measured.reduce((sum,floor)=>sum+(floor.nia??0),0):null
+  const upper=floorAreas.slice(1).filter(floor=>floor.nia!==null)
+  const upperNia=upper.reduce((sum,floor)=>sum+(floor.nia??0),0)
+  const upperGia=upper.reduce<number|null>((sum,floor)=>sum===null||floor.gia===null?null:sum+floor.gia,0)
   const gross=floorAreas.reduce((sum,floor)=>sum+floor.gea,0)
   const gia=floorAreas.some(floor=>floor.gia===null)?null:floorAreas.reduce((sum,floor)=>sum+(floor.gia??0),0)
   const outside=p.boundary.length>=3 && outlines.some(poly=>poly.some((a,i)=>
     !inside(a,p.boundary) || p.boundary.some((c,j)=>intersects(a,poly[(i+1)%poly.length],c,p.boundary[(j+1)%p.boundary.length]))
   ))
   const houses=b.type==='house'?outlines.length:0
-  const usable=units?units.reduce((sum,unit)=>sum+unit.usableArea,0)*floors(b):0
-  return {footprint, gross, gia, houses, usable, outside, floorAreas}
+  return {footprint, gross, gia, nia, upperNia, upperGia, houses, outside, floorAreas}
 }
 export function development(p:Project) {
   const site=area(p.boundary)
@@ -272,34 +280,26 @@ export function development(p:Project) {
   const apartmentMix={...mix}
   const houseMix:Record<HouseType,number>={'3B5P':0,'3B6P':0}
   let generatedApartments=0,estimatedGia:number|null=0
-  let targetAchieving=0,generatedUsable=0,coreArea=0,corridorArea=0
+  let targetAchieving=0,coreArea=0,corridorArea=0
   let upperNia=0,upperGia:number|null=0
-  function addUpperGia(floorAreas:ReturnType<typeof blockStats>['floorAreas']){
-    for(const {gia} of floorAreas.slice(1)){
-      upperGia=upperGia===null||gia===null?null:upperGia+gia
-    }
-  }
   const totals=p.blocks.reduce((total,b)=>{
     const s=blockStats(b,p)
+    upperNia+=s.upperNia
+    upperGia=upperGia===null||s.upperGia===null?null:upperGia+s.upperGia
     if(b.type==='house'){
-      addUpperGia(s.floorAreas)
-      upperNia+=s.usable*(floors(b)-1)/floors(b)
       mix[b.houseType]+=s.houses
       houseMix[b.houseType]+=s.houses
     }
     if(b.type==='apartment'){
       const layout=apartmentLayout(b,p)
       if(layout?.ok){
-        addUpperGia(s.floorAreas)
-        layout.floors.forEach((f,level)=>{
+        layout.floors.forEach(f=>{
           coreArea+=f.coreArea
           corridorArea+=f.corridorArea
           f.units.forEach(unit=>{
             generatedApartments++
             mix[unit.type]++
             apartmentMix[unit.type]++
-            generatedUsable+=unit.area
-            if(level>0)upperNia+=unit.area
             if(unit.area+1e-7>=unit.target)targetAchieving++
           })
         })
@@ -309,15 +309,15 @@ export function development(p:Project) {
     }
     const useGia=giaByUse[b.type]
     giaByUse[b.type]=useGia===null||s.gia===null?null:useGia+s.gia
-    return {gross:total.gross+s.gross,gia:total.gia===null||s.gia===null?null:total.gia+s.gia,footprint:total.footprint+s.footprint,houses:total.houses+s.houses,usable:total.usable+s.usable}
-  },{gross:0,gia:0 as number|null,footprint:0,houses:0,usable:0})
+    return {gross:total.gross+s.gross,gia:total.gia===null||s.gia===null?null:total.gia+s.gia,footprint:total.footprint+s.footprint,houses:total.houses+s.houses,nia:total.nia===null&&s.nia===null?null:(total.nia??0)+(s.nia??0)}
+  },{gross:0,gia:0 as number|null,footprint:0,houses:0,nia:null as number|null})
   const savedArea=p.apartmentAreaPerHome
   const apartmentAreaPerHome=savedArea!==undefined&&Number.isFinite(savedArea)&&savedArea>=1?savedArea:defaultApartmentAreaPerHome
   const estimatedApartments=estimatedGia===null?null:Math.floor(estimatedGia/apartmentAreaPerHome)
   const apartments=estimatedApartments===null?null:generatedApartments+estimatedApartments
   const homes=apartments===null?null:totals.houses+apartments
-  return {...totals,giaByUse,apartmentAreaPerHome,estimatedApartments,generatedApartments,apartments,homes,site,mix,apartmentMix,houseMix,targetAchieving,generatedUsable,coreArea,corridorArea,
-    efficiency:upperGia?upperNia*100/upperGia:null,
+  return {...totals,giaByUse,apartmentAreaPerHome,estimatedApartments,generatedApartments,apartments,homes,site,mix,apartmentMix,houseMix,targetAchieving,coreArea,corridorArea,
+    efficiency:efficiency(upperNia,upperGia),
     density:homes===null?null:site?homes*10000/site:0,coverage:site?totals.footprint/site*100:0}
 }
 export function newBlock(project:Project,type:Block['type'],line:Point[]):Block {
@@ -327,12 +327,15 @@ export function newBlock(project:Project,type:Block['type'],line:Point[]):Block 
   const {depth,floors,ground,upper}=blockTypes[type]
   return {id:crypto.randomUUID(),name:'Block '+label(index),type,line,depth,floors,ground,upper,level:0,houseType:'3B5P'}
 }
+function efficiency(nia:number,gia:number|null){
+  return gia?nia*100/gia:null
+}
 export function csv(p:Project) {
-  const headings=['Block','Type','Storeys','Height (m)','Footprint (m²)','External floor area (m²)','Houses','House type','Modelled usable house area (m²)','Site area (m²)']
-  const fixed=(n:number)=>n.toFixed(2)
-  const rows=p.blocks.map(b=>{const s=blockStats(b,p);return [b.name,b.type,floors(b),fixed(height(b,p.houseHeights)),fixed(s.footprint),fixed(s.gross),s.houses,b.type==='house'?b.houseType:'',fixed(s.usable),'']})
+  const headings=['Block','Type','Storeys','Height (m)','Footprint (m²)','External floor area (m²)','Houses','House type','NIA (m²)','Site area (m²)','Efficiency (L1+) (%)']
+  const fixed=(n:number|null)=>n===null?'':n.toFixed(2)
+  const rows=p.blocks.map(b=>{const s=blockStats(b,p);return [b.name,b.type,floors(b),fixed(height(b,p.houseHeights)),fixed(s.footprint),fixed(s.gross),s.houses,b.type==='house'?b.houseType:'',fixed(s.nia),'',fixed(efficiency(s.upperNia,s.upperGia))]})
   const t=development(p)
-  return [headings,...rows,['Site total','','','',fixed(t.footprint),fixed(t.gross),t.houses,'',fixed(t.usable),fixed(t.site)]].map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n')
+  return [headings,...rows,['Site total','','','',fixed(t.footprint),fixed(t.gross),t.houses,'',fixed(t.nia),fixed(t.site),fixed(t.efficiency)]].map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n')
 }
 
 function overlapRectangles(a:Point[],b:Point[]) {
