@@ -427,7 +427,11 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     if(d.action==='orbit'){
       const pivot:Point=[canvas.current!.clientWidth/2,canvas.current!.clientHeight/2]
       const anchor=geometry(d.camera).invert(pivot)
-      const next={...d.camera,angle:d.camera.angle-offset[0]*.004,tilt:Math.min(e.pointerType==='touch'?.99:.94,Math.max(.24,d.camera.tilt+offset[1]*(e.pointerType==='touch'?-.003:.0025)))}
+      const touch=e.pointerType==='touch'
+      const next={...d.camera,
+        angle:d.camera.angle+offset[0]*(touch?.004:-.004),
+        tilt:Math.min(touch?.99:.94,Math.max(.24,d.camera.tilt+offset[1]*(touch?-.003:.0025)))
+      }
       const [dx,dy]=pointDiff(pivot,geometry(next).project(anchor))
       setCamera({...next,pan:[next.pan[0]+dx,next.pan[1]+dy]})
     }
