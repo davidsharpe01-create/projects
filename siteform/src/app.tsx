@@ -131,6 +131,23 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const touches=useRef(new Map<number,Point>())
   const pinch=useRef<{camera:Camera;centre:Point;distance:number}|null>(null)
   const [activeHandle,setActiveHandle]=useState<number|'height'|null>(null)
+  const pickedHandle=useRef(false)
+  const pendingGeometry=useRef<Project|null>(null)
+  function updatePreview(next:Project|null){
+    pendingGeometry.current=next
+    setPreview(next)
+  }
+  function cancelPickedHandle(){
+    if(!pickedHandle.current)return
+    pickedHandle.current=false
+    drag.current=null
+    setActiveHandle(null)
+    updatePreview(null)
+    setGuide(undefined)
+  }
+  useLayoutEffect(()=>{
+    cancelPickedHandle()
+  },[project,camera,selection,plan,selectedFloor,tool,showSchedule])
   const drawingClick=useRef<Point|null>(null)
   const totals=useMemo(()=>development(project),[project])
   const settings=apartmentSettings(project)
@@ -270,6 +287,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   }
   const deleteFromKeyboard=useEffectEvent((event:KeyboardEvent)=>{
     if(showSchedule)return
+    if(event.key==='Escape'&&pickedHandle.current){cancelPickedHandle();return}
     if(event.key!=='Delete'&&event.key!=='Backspace')return
     if(event.defaultPrevented||event.repeat||event.isComposing||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return
     if(!selected||drag.current||menu||(tool!=='select'&&tool!=='move'&&tool!=='rotate'))return
@@ -317,20 +335,27 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   }
   function start(e:PointerEvent<HTMLCanvasElement>){
     drawingClick.current=null
-    setActiveHandle(null)
     if(e.pointerType==='touch'){
       touches.current.set(e.pointerId,viewPoint(e))
       if(touches.current.size>1||pinch.current){
         e.currentTarget.setPointerCapture(e.pointerId)
         if(touches.current.size===2)pinch.current={camera,...touchPair()!}
+        cancelPickedHandle()
+        setActiveHandle(null)
         drag.current=null
-        setPreview(null)
+        updatePreview(null)
         setGuide(undefined)
         setPointer(null)
         return
       }
     }
     if(e.button>2)return
+    if(pickedHandle.current&&e.button===0){
+      e.currentTarget.setPointerCapture(e.pointerId)
+      return
+    }
+    cancelPickedHandle()
+    setActiveHandle(null)
     if(e.button!==0)e.preventDefault()
     setMenu(null)
     const screen=viewPoint(e),point=geometry().invert(screen)
@@ -381,7 +406,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         d.camera=camera
         d.action=navigation
         d.changed=true
-        setPreview(null)
+        updatePreview(null)
       }
     }else if(d&&(d.action==='orbit'||d.action==='pan')&&d.navigation){
       d.last=screen
@@ -394,7 +419,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     const offset=pointDiff(screen,d.screen)
     if(d.action==='height'){
       const pixelsPerMetre=geometry(d.camera).s*Math.sqrt(1-d.camera.tilt**2)
-      setPreview({...d.project,blocks:d.project.blocks.map(b=>{
+      updatePreview({...d.project,blocks:d.project.blocks.map(b=>{
         if(b.id!==d.id)return b
         const delta=Math.round(-offset[1]/(pixelsPerMetre*b.upper))
         const floors=Math.min(blockStoreys.max,Math.max(blockStoreys.min,b.floors+delta))
@@ -424,7 +449,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       const heights=levels(block)
       const level=plan?0:block.level+(stackView?heights[d.floor]:(heights[d.floor-1]+heights[d.floor])/2)
       setGuide(match&&Math.abs(applied-delta)<1e-6?{...match.guide,level}:undefined)
-      setPreview({...d.project,blocks:d.project.blocks.map(b=>b===block?updated:b)})
+      updatePreview({...d.project,blocks:d.project.blocks.map(b=>b===block?updated:b)})
       return
     }
     if(d.action==='orbit'){
@@ -453,7 +478,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       const result=snap?snapPoint(raw,references,toScreen,anchors):{point:raw,guide:undefined}
       setGuide(result.guide&&{...result.guide,level})
       const updated=line.map((p,i)=>i===d.vertex?result.point:p)
-      setPreview(block?{...d.project,blocks:d.project.blocks.map(b=>b===block?editGroundFrontage(b,updated):b)}:{...d.project,boundary:updated})
+      updatePreview(block?{...d.project,blocks:d.project.blocks.map(b=>b===block?editGroundFrontage(b,updated):b)}:{...d.project,boundary:updated})
       return
     }
     if(!block)return
@@ -484,23 +509,34 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       line=block.line.map(([px,py])=>[x+(px-x)*Math.cos(angle)-(py-y)*Math.sin(angle),y+(px-x)*Math.sin(angle)+(py-y)*Math.cos(angle)])
       setGuide(match&&{...match,point:line[1],anchor:line[0],level})
     }
-    setPreview({...d.project,blocks:d.project.blocks.map(b=>b===block?{...b,line}:b)})
+    updatePreview({...d.project,blocks:d.project.blocks.map(b=>b===block?{...b,line}:b)})
   }
   function end(e:PointerEvent<HTMLCanvasElement>){
-    setActiveHandle(null)
     if(releaseTouch(e))return
-    const d=drag.current;drag.current=null
+    const d=drag.current
     if(!d)return
+    const placing=pickedHandle.current
+    if(placing){
+      move(e)
+      pickedHandle.current=false
+    }else if(!d.changed&&e.button===0&&(d.vertex>=0||
+      d.action==='height'&&scene.current.heightAt(d.screen,true))){
+      pickedHandle.current=true
+      return
+    }
+    drag.current=null
+    setActiveHandle(null)
     setGuide(undefined)
     if(d.changed){
-      if(preview){
-        if((!preview.boundary.length||validPolygon(preview.boundary))&&preview.blocks.every(b=>footprintSatisfies(b,preview.targets)))commit(preview,d.action==='setback')
+      const next=pendingGeometry.current
+      if(next){
+        if((!next.boundary.length||validPolygon(next.boundary))&&next.blocks.every(b=>footprintSatisfies(b,next.targets)))commit(next,d.action==='setback')
         else setNotice('This edit would create invalid geometry. The previous shape was restored.')
-        setPreview(null)
+        updatePreview(null)
       }
       return
     }
-    if(e.button!==0||d.navigation)return
+    if(placing||e.button!==0||d.navigation)return
     if(tool==='select'){drawingClick.current=d.screen;return}
     if(d.action==='vertices'||d.action==='setback')return
     if(d.action==='height'&&!scene.current.pick(d.screen))return
@@ -674,7 +710,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
       </div>
       <div className="tool-preferences"><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
       <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, drag one finger on the scene to orbit in 3D, or start on a handle to edit. Drag two fingers to pan and pinch to zoom. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, drag one finger on the scene to orbit in 3D, or start on a handle to edit. Drag two fingers to pan and pinch to zoom. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Click or tap a handle to pick it up, then click or tap again to place it. You can also drag a handle directly. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
       </div>
       </div>
     </section>
@@ -683,7 +719,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
     <main className="model-layout">
       <section className="workspace" aria-label="Site workspace">
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
-          onPointerDown={start} onPointerMove={move} onPointerUp={end} onClick={clickCanvas} onPointerCancel={e=>{setActiveHandle(null);if(releaseTouch(e))return;drag.current=null;setPreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
+          onPointerDown={start} onPointerMove={move} onPointerUp={end} onClick={clickCanvas} onPointerCancel={e=>{setActiveHandle(null);if(releaseTouch(e))return;pickedHandle.current=false;drag.current=null;updatePreview(null);setGuide(undefined)}} onPointerLeave={()=>{if(!drag.current)setGuide(undefined)}}
           onAuxClick={e=>{if(e.button===1)e.preventDefault()}} onContextMenu={e=>e.preventDefault()}/>
         <div className="map-right">
           <button className="compass" type="button" title="Reset view to north" onClick={()=>setCamera({...home,angle:0})}>
