@@ -64,7 +64,7 @@ function exposedRoute(points:Point[],edges:SetbackEdge[]):Point[][] {
   })
 }
 
-type Scene = {showFloorplates:boolean; camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; drawBuilding:boolean; editBoundary:boolean; skipLayouts?:boolean; context:ContextData; aerial:AerialTile[]; ghosted:ReadonlySet<number>}
+type Scene = {activeHandle?:number|'height'|null; showFloorplates:boolean; camera:Camera;plan:boolean;floor:number;editFloor:number;project:Project;selected:string|null;draft:Point[];pointer:Point|null;guide?:SnapGuide; layers:Layers; opacity:number; editFrontage:boolean; drawBuilding:boolean; editBoundary:boolean; skipLayouts?:boolean; context:ContextData; aerial:AerialTile[]; ghosted:ReadonlySet<number>}
 export function draw(canvas:HTMLCanvasElement,scene:Scene) {
   const ctx=canvas.getContext('2d')!
   const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio,2)
@@ -397,8 +397,9 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.fillStyle=chosen?'#fff':'#354f63';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,x,y+.5)
   })
   if(heightHandle){
-    const [x,y]=heightHandle,colour=editingBlue
-    dot(heightHandle,colour,8)
+    const [x,y]=heightHandle,active=scene.activeHandle==='height'
+    const colour=active?'#fff':editingBlue
+    dot(heightHandle,editingBlue,8,active)
     path([[x,y-4.5],[x,y+4.5]],undefined,colour,1.4,false)
     path([[x-2.5,y-2],[x,y-4.5],[x+2.5,y-2]],undefined,colour,1.4,false)
     path([[x-2.5,y+2],[x,y+4.5],[x+2.5,y+2]],undefined,colour,1.4,false)
@@ -415,14 +416,14 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       const front=poly.slice(0,lastFront+1).map(p=>xy(p,elevation))
       path(front,undefined,editingBlue,2,false)
       setbackHandles.push(front[0],front[lastFront])
-      setbackHandles.forEach(p=>dot(p,editingBlue,6.5))
+      setbackHandles.forEach((p,i)=>dot(p,editingBlue,6.5,scene.activeHandle===i))
     }
   }
   const handles=block&&(!editFloor||block.type==='house')
     ?block.line.map(p=>xy(p,plan?0:block.level))
     :editBoundary?boundary.map(p=>xy(p)):[]
   if(block)path(handles,undefined,editingBlue,2,false)
-  handles.forEach(p=>dot(p,block?editingBlue:boundaryRed,5.5))
+  handles.forEach((p,i)=>dot(p,block?editingBlue:boundaryRed,5.5,scene.activeHandle===i))
   if(draft.length){
     const colour=scene.drawBuilding?editingBlue:boundaryRed
     world(draft,undefined,colour,2,false)
@@ -446,8 +447,8 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
     ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='white'
     ctx.fillText(guide.label,x+7,y+10)
   }
-  function dot(p:Point,colour:string,r:number){
-    ctx.beginPath();ctx.arc(...p,r,0,2*Math.PI);ctx.fillStyle='#fffdf5';ctx.fill()
+  function dot(p:Point,colour:string,r:number,filled=false){
+    ctx.beginPath();ctx.arc(...p,r,0,2*Math.PI);ctx.fillStyle=filled?colour:'#fffdf5';ctx.fill()
     ctx.strokeStyle=colour;ctx.lineWidth=2;ctx.stroke()
   }
   return {legend:[...legend.values()],pick:(point:Point)=>pickSurface(solidSurfaces,point),handles,
@@ -458,5 +459,5 @@ export function draw(canvas:HTMLCanvasElement,scene:Scene) {
       const surface=visibleSurface(solidSurfaces,point)
       return surface?.roof?0:surface?.floor??0
     },
-    heightAt:(point:Point)=>!!heightHandle&&(length(point,heightHandle)<12||pickSurface(solidSurfaces,point,true)===selected)}
+    heightAt:(point:Point,handleOnly=false)=>!!heightHandle&&(length(point,heightHandle)<12||!handleOnly&&pickSurface(solidSurfaces,point,true)===selected)}
 }
