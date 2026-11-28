@@ -49,6 +49,9 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const project=history.current
   const [showSchedule,setShowSchedule]=useState(false)
   const [showInspector,setShowInspector]=useState(false)
+  const [openPanel,setOpenPanel]=useState<'project'|'tools'|null>(null)
+  const sheetStart=useRef<number|null>(null)
+  const sheetSwiped=useRef(false)
   const atDefault=isDefaultAddress(project.anchor)
   const location=siteLocation(project)
   const [selection,setSelection]=useState<string|null>(null)
@@ -104,7 +107,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const [draft,setDraft]=useState<Point[]>([])
   const [pointer,setPointer]=useState<Point|null>(null)
   const [preview,setPreview]=useState<Project|null>(null)
-  const [menu,setMenu]=useState<'layers'|'export'|'help'|'location'|'draw'|'tools'|null>(null)
+  const [menu,setMenu]=useState<'layers'|'export'|'help'|'location'|null>(null)
   const [latitude,setLatitude]=useState(String(project.anchor?.lat??defaultAddress.anchor.lat))
   const [longitude,setLongitude]=useState(String(project.anchor?.lon??defaultAddress.anchor.lon))
   const [notice,setNotice]=useState('')
@@ -605,14 +608,17 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
   const shownFloor=Math.min(floor,storyCount-1)
   return <>
   <div className={showSchedule?"app schedule-hidden-model":"app"} inert={showSchedule}>
-    <header className="topbar">
+    <div className="workspace-panels">
+    <details className="workspace-panel project-panel" open={openPanel==='project'}>
+      <summary onClick={event=>{event.preventDefault();setMenu(null);setOpenPanel(open=>open==='project'?null:'project')}}><span>{site.name}</span><Icon name="chevron" size={16}/></summary>
+      <div className="topbar">
         <div className="editor-site">
         <Button icon="right" kind="back-to-sites" onClick={()=>{
           if(saved&&!saveError||saveError&&window.confirm('Return to Sites and leave unsaved changes behind?'))close()
         }} disabled={!saved&&!saveError}>Sites</Button>
         <div className="site-location">
           <button className="site-title" type="button" aria-expanded={menu==='location'} onClick={()=>setOption('location')}>
-            <span><strong>{site.name}</strong><small>{location?location.lat.toFixed(5)+'°, '+location.lon.toFixed(5)+'°':'Set map origin and draw redline'}</small></span>
+            <span><strong>Map location</strong><small>{location?location.lat.toFixed(5)+'°, '+location.lon.toFixed(5)+'°':'Set map origin and draw redline'}</small></span>
             <Icon name="chevron" size={13}/>
           </button>
           {menu==='location'&&<form className="popover location-menu" onSubmit={e=>{e.preventDefault();locate()}}>
@@ -636,29 +642,14 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
           {menu==='export'&&<div className="popover export-menu"><button onClick={()=>download('csv')}>Development schedule <small>CSV</small></button><button onClick={()=>download('json')}>Project data <small>JSON</small></button></div>}
         </div>
       </div>
-    </header>
-    <section className="toolbar" aria-label="Design tools">
+      </div>
+    </details>
+    <details className="workspace-panel tools-panel" open={openPanel==='tools'}>
+      <summary onClick={event=>{event.preventDefault();setMenu(null);setOpenPanel(open=>open==='tools'?null:'tools')}}><Icon name="settings" size={16}/><span>Tools</span><Icon name="chevron" size={16}/></summary>
+      <section className="toolbar" aria-label="Design tools">
       <div className="toolset">
-        {tools.slice(0,2).map(t=><Button key={t.id} icon={t.icon} kind={t.id==="boundary"||t.id==="measure"?"tool":"tool building-tool"} title={t.name} active={tool===t.id||(t.id==='boundary'&&tool==='vertices')} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>)}
-        <div className="menu-anchor compact-tools">
-          <Button icon="building" kind="tool building-tool" title="Draw building" active={isBuildingTool(tool)} onClick={()=>setOption('draw')}>
-            <span>{isBuildingTool(tool)?tools.find(t=>t.id===tool)?.name:'Draw building'}</span><Icon name="chevron" size={13}/>
-          </Button>
-          {menu==='draw'&&<div className="popover tool-menu">
-            {tools.filter(t=>isBuildingTool(t.id)).map(t=><Button key={t.id} icon={t.icon} kind="menu-tool" onClick={()=>choose(t.id)}>{t.name}</Button>)}
-          </div>}
-        </div>
-        <div className="menu-anchor compact-tools">
-          <Button icon="settings" kind="tool building-tool" title="Edit tools" active={['move','rotate','measure'].includes(tool)} onClick={()=>setOption('tools')}><span>Tools</span><Icon name="chevron" size={13}/></Button>
-          {menu==='tools'&&<div className="popover tool-menu">
-            {tools.filter(t=>['move','rotate','measure'].includes(t.id)).map(t=><Button key={t.id} icon={t.icon} kind="menu-tool" onClick={()=>choose(t.id)}>{t.name}</Button>)}
-          </div>}
-        </div>
-        <div className="desktop-tools">
-          {tools.slice(2).map(t=><div key={t.id} className={t.id==='move'?'tool-divider':undefined}>
-            <Button icon={t.icon} kind={t.id==="boundary"||t.id==="measure"?"tool":"tool building-tool"} title={t.name} active={tool===t.id} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>
-          </div>)}
-        </div>
+        {tools.map(t=><Button key={t.id} icon={t.icon} kind="tool" title={t.name}
+          active={tool===t.id||(t.id==='boundary'&&tool==='vertices')} onClick={()=>choose(t.id)}><span>{t.name}</span></Button>)}
         <Button icon="ghost" kind="tool ghost-tool" title="Ghost existing buildings" active={tool==='ghost'}
           disabled={!layers.context||!contextStatus?.data.buildings.length} onClick={()=>choose(tool==='ghost'?'select':'ghost')}>
           <span>Ghost</span>
@@ -681,7 +672,14 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
           </div>}
         </div>
       </div>
+      <div className="tool-preferences"><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
+      <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
+        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, drag one finger on the scene to orbit in 3D, or start on a handle to edit. Drag two fingers to pan and pinch to zoom. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
+      </div>
+      </div>
     </section>
+    </details>
+    </div>
     <main className="model-layout">
       <section className="workspace" aria-label="Site workspace">
         <canvas ref={canvas} aria-label="Interactive site model" className={tool==='select'?'':tool==='move'?'moving':'drawing'}
@@ -743,9 +741,28 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         <div className="map-scale"><span>{scaleMetres} m</span><i style={{width:scaleMetres*scale}}/></div>
       </section>
       <aside className={'sidebar'+(showInspector?' inspector-expanded':'')} aria-label="Project inspector">
+        <button type="button" className="inspector-toggle" aria-expanded={showInspector} aria-controls="inspector-details"
+          aria-label={showInspector?'Collapse overview':'Expand overview'}
+          onPointerDown={event=>{
+            sheetSwiped.current=false
+            sheetStart.current=event.pointerType==='touch'?event.clientY:null
+            if(sheetStart.current!==null)event.currentTarget.setPointerCapture(event.pointerId)
+          }}
+          onPointerUp={event=>{
+            const start=sheetStart.current
+            sheetStart.current=null
+            if(start===null||Math.abs(event.clientY-start)<24)return
+            sheetSwiped.current=true
+            setShowInspector(event.clientY<start)
+          }}
+          onPointerCancel={()=>{sheetStart.current=null;sheetSwiped.current=false}}
+          onClick={event=>{
+            if(event.detail===0||!sheetSwiped.current)setShowInspector(open=>!open)
+            sheetSwiped.current=false
+          }}><Icon name="chevron" size={16}/></button>
         <div className="overview">
           <div className="heading"><div className="overview-title"><h1>{selected?.name??'Overview'}</h1>{selected&&<p className="block-typology">{blockTypes[selected.type].label}{selectedLayout?.ok&&selectedLayout.hrb?' (HRB)':''}</p>}</div>{selected&&<button type="button" className="secondary" onClick={()=>{choose('select');revealBlock(null);setEditFloor(0)}}>Clear selection</button>}
-            <button type="button" className="inspector-toggle" aria-expanded={showInspector} aria-controls="inspector-details" aria-label={showInspector?'Collapse overview':'Expand overview'} onClick={()=>setShowInspector(!showInspector)}><Icon name="chevron" size={16}/></button>
+
           </div>
           <div className="summary-grid" aria-live="polite">
             <div><span>Homes</span><strong>{summary.homes===null?'—':format(summary.homes)}</strong></div>
@@ -887,13 +904,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
         </div>
       </aside>
     </main>
-    <footer>
-      <div>Local coordinates · metres</div>
-      <div><label className="snap"><input type="checkbox" checked={snap} onChange={e=>{setSnap(e.target.checked);setGuide(undefined)}}/>Snapping</label>
-      <span className="foot-divider"/><div className="menu-anchor help"><Button icon="help" title="Workspace help" kind="square" onClick={()=>setOption('help')}/>
-        {menu==='help'&&<div className="popover help-menu"><strong>Workspace controls</strong><p>Left-drag away from editing handles in Select to pan. Right-drag or middle-drag to orbit in 3D. Hold left and middle together to pan. In Plan, navigation drags pan. Roll the mouse wheel to zoom around the cursor. On touch screens, drag one finger on the scene to orbit in 3D, or start on a handle to edit. Drag two fingers to pan and pinch to zoom. Snapping follows building faces and angles, with a 0.5 m grid elsewhere.</p><p>Click the ground floor to edit the building frontage. Click an upper floor once and drag either end for a setback. Drag the height handle to change storeys. Click empty space to finish. Press Delete or Backspace to delete the selected block.</p><p>Use Boundary → Edit boundary to adjust the redline. Use the toolbar to undo or redo and the block properties to duplicate or delete.</p><a href="https://www.openstreetmap.org/#map=19/52.4749/-1.889077" target="_blank" rel="noreferrer">Open UK map reference ↗</a></div>}
-      </div></div>
-    </footer>
+
   </div>
   {showSchedule&&<SchedulePage name={site.name} project={project} totals={totals} onBack={()=>setShowSchedule(false)}/>}
   </>
