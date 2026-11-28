@@ -889,7 +889,7 @@ function App({site,close,onSaved}:{site:Site;close:()=>void;onSaved:(site:Site)=
             </div>
           </div>
         </Panel>}
-        <Panel title="Dwelling types" icon="settings" initial={false}>
+        <Panel key={String(showInspector)} title="Dwelling types" icon="settings">
           <section className="properties dwelling-settings" aria-labelledby="apartment-types">
             <h3 id="apartment-types">Apartment types</h3>
             <div className="property-grid">

@@ -444,3 +444,6 @@ body:has(.sites-overview) { background: #f6f5f1; }
 }
 .app .attribution { bottom: calc(var(--sheet-clearance) + 2px); }
 .app .map-controls { border-radius: 13px; box-shadow: var(--floating-shadow); }
+.inspector-details .panel-toggle { border-radius: 14px; }
+.inspector-details .panel-toggle[aria-expanded="true"] { border-radius: 14px 14px 0 0; }
+.inspector-details .panel-toggle[aria-expanded="true"]:hover { background: #faf9f6; }
